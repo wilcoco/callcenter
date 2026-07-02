@@ -25,6 +25,14 @@ def test_priority_normal_default():
     assert routing.estimate_priority("문의가 있어서요") == "normal"
 
 
+def test_agent_speaker_label_does_not_leak_into_routing():
+    # "상담원:" 라벨의 '상담'이 영업팀 키워드로 오탐되면 안 됨 (회귀 테스트)
+    from app import llm
+
+    transcript = "고객: 그냥 일반적인 질문이 있어요\n상담원: 네, 말씀해 주세요"
+    assert llm._fallback_analysis(transcript)["team_key"] == "general"
+
+
 def test_normalize_invalid_team_key():
     assert routing.normalize_team_key("not-a-team") == "general"
     assert routing.normalize_team_key("billing") == "billing"

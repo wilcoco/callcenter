@@ -221,18 +221,19 @@ def _norm_priority(value) -> str:
 
 
 def _fallback_analysis(transcript: str) -> dict:
-    team_key = routing.keyword_route(transcript)
+    # 분류는 고객 발화만 기준으로 — 상담원 멘트("상담원:" 라벨 포함)가
+    # 키워드에 오탐되는 것을 방지
     caller_text = " ".join(
         line.split("고객:", 1)[1].strip()
         for line in transcript.splitlines()
         if line.startswith("고객:")
     )
-    snippet = (caller_text or transcript).strip()
-    title = (snippet[:40] + "…") if len(snippet) > 40 else (snippet or "전화 문의")
+    basis = (caller_text or transcript).strip()
+    title = (basis[:40] + "…") if len(basis) > 40 else (basis or "전화 문의")
     return {
-        "team_key": team_key,
+        "team_key": routing.keyword_route(basis),
         "title": title or "전화 문의",
-        "summary": snippet[:300] or "통화 내용 없음",
+        "summary": basis[:300] or "통화 내용 없음",
         "intent": "문의",
-        "priority": routing.estimate_priority(transcript),
+        "priority": routing.estimate_priority(basis),
     }

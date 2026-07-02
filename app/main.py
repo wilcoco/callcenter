@@ -5,10 +5,10 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import JSONResponse, Response
 from sqlalchemy.orm import Session
 
-from . import llm, services, twiml
+from . import llm, services, twiml, ui
 from .config import get_settings
 from .database import get_db, init_db
 from .models import Call, Team, Ticket
@@ -24,6 +24,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="콜센터 자동 응대·팀 배정", version="0.1.0", lifespan=lifespan)
+app.include_router(ui.router)
 
 
 # ---------------------------------------------------------------------------
@@ -200,21 +201,3 @@ def get_call(call_id: int, db: Session = Depends(get_db)):
     if not c:
         raise HTTPException(404, "call not found")
     return _call_dict(c)
-
-
-@app.get("/", response_class=HTMLResponse)
-def dashboard(db: Session = Depends(get_db)):
-    tickets = db.query(Ticket).order_by(Ticket.id.desc()).limit(50).all()
-    rows = "".join(
-        f"<tr><td>#{t.id}</td><td>{t.team_name}</td><td>{t.priority}</td>"
-        f"<td>{t.title}</td><td>{t.status}</td></tr>"
-        for t in tickets
-    )
-    return f"""<!doctype html><html lang="ko"><meta charset="utf-8">
-<title>콜센터 티켓</title>
-<style>body{{font-family:sans-serif;margin:2rem}}table{{border-collapse:collapse;width:100%}}
-td,th{{border:1px solid #ddd;padding:.5rem;text-align:left}}th{{background:#f4f4f4}}</style>
-<h1>📞 콜센터 자동 배정 티켓</h1>
-<p>총 {len(tickets)}건 (최근 50건). API: <code>/tickets</code>, <code>/calls</code></p>
-<table><tr><th>티켓</th><th>담당팀</th><th>우선순위</th><th>제목</th><th>상태</th></tr>
-{rows or '<tr><td colspan=5>아직 티켓이 없습니다.</td></tr>'}</table></html>"""

@@ -1,0 +1,279 @@
+"""서버 렌더링 웹 UI — 대시보드 / 티켓 / 통화 메뉴."""
+from __future__ import annotations
+
+import html
+
+from fastapi import APIRouter, Depends, Form, HTTPException
+from fastapi.responses import HTMLResponse, RedirectResponse
+from sqlalchemy import func
+from sqlalchemy.orm import Session
+
+from .database import get_db
+from .models import Call, Team, Ticket
+
+router = APIRouter()
+
+_PRIORITY_LABEL = {"low": "낮음", "normal": "보통", "high": "높음", "urgent": "긴급"}
+_STATUS_LABEL = {"open": "접수", "in_progress": "처리중", "done": "완료"}
+
+_STYLE = """
+*{box-sizing:border-box}body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;
+margin:0;background:#f5f6f8;color:#222}
+nav{background:#1f2937;padding:0 1.5rem;display:flex;gap:.25rem;align-items:center}
+nav .brand{color:#fff;font-weight:700;padding:1rem .75rem 1rem 0;font-size:1.05rem}
+nav a{color:#cbd5e1;text-decoration:none;padding:1rem .9rem;display:inline-block}
+nav a:hover{color:#fff}nav a.active{color:#fff;box-shadow:inset 0 -3px 0 #3b82f6}
+main{max-width:1000px;margin:1.5rem auto;padding:0 1rem}
+h1{font-size:1.3rem;margin:.2rem 0 1rem}
+table{border-collapse:collapse;width:100%;background:#fff;border-radius:8px;overflow:hidden;
+box-shadow:0 1px 3px rgba(0,0,0,.08)}
+td,th{border-bottom:1px solid #eee;padding:.6rem .7rem;text-align:left;font-size:.92rem}
+th{background:#f9fafb;color:#555;font-weight:600}
+tr:last-child td{border-bottom:none}
+a.row-link{color:#2563eb;text-decoration:none}a.row-link:hover{text-decoration:underline}
+.cards{display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1.4rem}
+.card{background:#fff;border-radius:8px;padding:1rem 1.3rem;min-width:140px;flex:1;
+box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.card .num{font-size:1.7rem;font-weight:700}.card .lbl{color:#666;font-size:.85rem}
+.badge{display:inline-block;padding:.15rem .55rem;border-radius:99px;font-size:.78rem;font-weight:600}
+.p-low{background:#e5e7eb;color:#374151}.p-normal{background:#dbeafe;color:#1d4ed8}
+.p-high{background:#ffedd5;color:#c2410c}.p-urgent{background:#fee2e2;color:#b91c1c}
+.s-open{background:#fef9c3;color:#854d0e}.s-in_progress{background:#dbeafe;color:#1d4ed8}
+.s-done{background:#dcfce7;color:#166534}
+.filters{margin-bottom:.8rem;display:flex;gap:.5rem;flex-wrap:wrap}
+.filters a{background:#fff;border:1px solid #ddd;border-radius:6px;padding:.3rem .7rem;
+text-decoration:none;color:#333;font-size:.85rem}
+.filters a.on{background:#1f2937;color:#fff;border-color:#1f2937}
+.chat{background:#fff;border-radius:8px;padding:1rem;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.msg{margin:.5rem 0;display:flex}.msg .bubble{max-width:75%;padding:.5rem .8rem;border-radius:12px;
+font-size:.92rem;white-space:pre-wrap}
+.msg.caller .bubble{background:#e0e7ff}.msg.agent{justify-content:flex-end}
+.msg.agent .bubble{background:#f1f5f9}
+.msg .who{font-size:.72rem;color:#888;margin:0 .4rem;align-self:flex-end}
+.detail{background:#fff;border-radius:8px;padding:1rem 1.3rem;margin-bottom:1rem;
+box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.detail dt{color:#666;font-size:.8rem;margin-top:.6rem}.detail dd{margin:.15rem 0 0}
+form.inline{display:inline}
+button.act{border:1px solid #ccc;background:#fff;border-radius:6px;padding:.25rem .6rem;
+cursor:pointer;font-size:.8rem;margin-right:.25rem}
+button.act:hover{background:#f3f4f6}
+.empty{color:#888;padding:2rem;text-align:center}
+"""
+
+
+def _e(text) -> str:
+    return html.escape(str(text or ""))
+
+
+def _page(title: str, body: str, active: str) -> str:
+    def nav_cls(key: str) -> str:
+        return ' class="active"' if key == active else ""
+
+    return f"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{_e(title)} — 콜센터</title><style>{_STYLE}</style></head><body>
+<nav><span class="brand">📞 콜센터</span>
+<a href="/"{nav_cls('dash')}>대시보드</a>
+<a href="/ui/tickets"{nav_cls('tickets')}>티켓</a>
+<a href="/ui/calls"{nav_cls('calls')}>통화 기록</a>
+</nav><main><h1>{_e(title)}</h1>{body}</main></body></html>"""
+
+
+def _priority_badge(p: str) -> str:
+    return f'<span class="badge p-{_e(p)}">{_e(_PRIORITY_LABEL.get(p, p))}</span>'
+
+
+def _status_badge(s: str) -> str:
+    return f'<span class="badge s-{_e(s)}">{_e(_STATUS_LABEL.get(s, s))}</span>'
+
+
+def _fmt_dt(value) -> str:
+    return value.strftime("%Y-%m-%d %H:%M") if value else "-"
+
+
+# ---------------------------------------------------------------------------
+# 대시보드
+# ---------------------------------------------------------------------------
+@router.get("/", response_class=HTMLResponse)
+def dashboard(db: Session = Depends(get_db)):
+    total_calls = db.query(func.count(Call.id)).scalar() or 0
+    total_tickets = db.query(func.count(Ticket.id)).scalar() or 0
+    open_tickets = (
+        db.query(func.count(Ticket.id)).filter(Ticket.status != "done").scalar() or 0
+    )
+    urgent = (
+        db.query(func.count(Ticket.id))
+        .filter(Ticket.priority == "urgent", Ticket.status != "done")
+        .scalar()
+        or 0
+    )
+
+    team_counts = dict(
+        db.query(Ticket.team_name, func.count(Ticket.id))
+        .filter(Ticket.status != "done")
+        .group_by(Ticket.team_name)
+        .all()
+    )
+    team_rows = "".join(
+        f"<tr><td>{_e(name)}</td><td>{count}</td></tr>" for name, count in team_counts.items()
+    ) or '<tr><td colspan="2" class="empty">미처리 티켓 없음</td></tr>'
+
+    recent = db.query(Ticket).order_by(Ticket.id.desc()).limit(10).all()
+    recent_rows = "".join(
+        f"<tr><td>#{t.id}</td><td>{_e(t.team_name)}</td>"
+        f"<td>{_priority_badge(t.priority)}</td>"
+        f'<td><a class="row-link" href="/ui/calls/{t.call_id}">{_e(t.title)}</a></td>'
+        f"<td>{_status_badge(t.status)}</td><td>{_fmt_dt(t.created_at)}</td></tr>"
+        for t in recent
+    ) or '<tr><td colspan="6" class="empty">아직 티켓이 없습니다.</td></tr>'
+
+    body = f"""
+<div class="cards">
+<div class="card"><div class="num">{total_calls}</div><div class="lbl">총 통화</div></div>
+<div class="card"><div class="num">{total_tickets}</div><div class="lbl">총 티켓</div></div>
+<div class="card"><div class="num">{open_tickets}</div><div class="lbl">미처리 티켓</div></div>
+<div class="card"><div class="num">{urgent}</div><div class="lbl">긴급</div></div>
+</div>
+<h1>팀별 미처리 업무</h1>
+<table><tr><th>팀</th><th>건수</th></tr>{team_rows}</table>
+<h1 style="margin-top:1.5rem">최근 티켓</h1>
+<table><tr><th>번호</th><th>담당팀</th><th>우선순위</th><th>제목</th><th>상태</th><th>접수</th></tr>
+{recent_rows}</table>"""
+    return _page("대시보드", body, "dash")
+
+
+# ---------------------------------------------------------------------------
+# 티켓 목록 / 상태 변경
+# ---------------------------------------------------------------------------
+@router.get("/ui/tickets", response_class=HTMLResponse)
+def tickets_page(
+    db: Session = Depends(get_db), team: str = "", status: str = ""
+):
+    q = db.query(Ticket).order_by(Ticket.id.desc())
+    if team:
+        q = q.filter(Ticket.team_key == team)
+    if status:
+        q = q.filter(Ticket.status == status)
+    tickets = q.limit(200).all()
+
+    teams = db.query(Team).all()
+
+    def flink(label: str, t: str, s: str, on: bool) -> str:
+        qs = []
+        if t:
+            qs.append(f"team={t}")
+        if s:
+            qs.append(f"status={s}")
+        href = "/ui/tickets" + ("?" + "&".join(qs) if qs else "")
+        return f'<a href="{href}" class="{"on" if on else ""}">{_e(label)}</a>'
+
+    team_filters = flink("전체 팀", "", status, not team) + "".join(
+        flink(tm.name, tm.key, status, team == tm.key) for tm in teams
+    )
+    status_filters = flink("전체 상태", team, "", not status) + "".join(
+        flink(label, team, key, status == key) for key, label in _STATUS_LABEL.items()
+    )
+
+    def actions(t: Ticket) -> str:
+        buttons = []
+        for key, label in _STATUS_LABEL.items():
+            if key != t.status:
+                buttons.append(
+                    f'<form class="inline" method="post" action="/ui/tickets/{t.id}/status">'
+                    f'<input type="hidden" name="status" value="{key}">'
+                    f'<button class="act">{_e(label)}</button></form>'
+                )
+        return "".join(buttons)
+
+    rows = "".join(
+        f"<tr><td>#{t.id}</td><td>{_e(t.team_name)}</td>"
+        f"<td>{_priority_badge(t.priority)}</td>"
+        f'<td><a class="row-link" href="/ui/calls/{t.call_id}">{_e(t.title)}</a></td>'
+        f"<td>{_status_badge(t.status)}</td><td>{_fmt_dt(t.created_at)}</td>"
+        f"<td>{actions(t)}</td></tr>"
+        for t in tickets
+    ) or '<tr><td colspan="7" class="empty">조건에 맞는 티켓이 없습니다.</td></tr>'
+
+    body = f"""
+<div class="filters">{team_filters}</div>
+<div class="filters">{status_filters}</div>
+<table><tr><th>번호</th><th>담당팀</th><th>우선순위</th><th>제목</th><th>상태</th><th>접수</th><th>상태 변경</th></tr>
+{rows}</table>"""
+    return _page("티켓", body, "tickets")
+
+
+@router.post("/ui/tickets/{ticket_id}/status")
+def change_ticket_status(
+    ticket_id: int, status: str = Form(...), db: Session = Depends(get_db)
+):
+    if status not in _STATUS_LABEL:
+        raise HTTPException(400, "invalid status")
+    ticket = db.get(Ticket, ticket_id)
+    if not ticket:
+        raise HTTPException(404, "ticket not found")
+    ticket.status = status
+    db.flush()
+    return RedirectResponse("/ui/tickets", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# 통화 목록 / 상세(전문)
+# ---------------------------------------------------------------------------
+@router.get("/ui/calls", response_class=HTMLResponse)
+def calls_page(db: Session = Depends(get_db)):
+    calls = db.query(Call).order_by(Call.id.desc()).limit(200).all()
+    rows = "".join(
+        f'<tr><td><a class="row-link" href="/ui/calls/{c.id}">#{c.id}</a></td>'
+        f"<td>{_e(c.from_number)}</td><td>{_e(c.status)}</td><td>{c.turns}</td>"
+        f"<td>{_e(c.intent or '-')}</td>"
+        f"<td>{_e((c.ticket.team_name if c.ticket else '-'))}</td>"
+        f"<td>{_fmt_dt(c.started_at)}</td></tr>"
+        for c in calls
+    ) or '<tr><td colspan="7" class="empty">아직 통화 기록이 없습니다.</td></tr>'
+
+    body = f"""<table>
+<tr><th>번호</th><th>발신번호</th><th>상태</th><th>대화턴</th><th>용건</th><th>배정팀</th><th>시작</th></tr>
+{rows}</table>"""
+    return _page("통화 기록", body, "calls")
+
+
+@router.get("/ui/calls/{call_id}", response_class=HTMLResponse)
+def call_detail_page(call_id: int, db: Session = Depends(get_db)):
+    call = db.get(Call, call_id)
+    if not call:
+        raise HTTPException(404, "call not found")
+
+    bubbles = "".join(
+        f'<div class="msg {m.role}">'
+        + (
+            f'<div class="bubble">{_e(m.text)}</div><span class="who">상담원</span>'
+            if m.role == "agent"
+            else f'<span class="who">고객</span><div class="bubble">{_e(m.text)}</div>'
+        )
+        + "</div>"
+        for m in call.messages
+    ) or '<div class="empty">대화 내용이 없습니다.</div>'
+
+    ticket_html = ""
+    if call.ticket:
+        t = call.ticket
+        ticket_html = f"""
+<div class="detail"><strong>🎫 배정된 티켓 #{t.id}</strong>
+<dl>
+<dt>담당팀</dt><dd>{_e(t.team_name)} {_priority_badge(t.priority)} {_status_badge(t.status)}</dd>
+<dt>제목</dt><dd>{_e(t.title)}</dd>
+<dt>요약</dt><dd>{_e(t.summary)}</dd>
+</dl></div>"""
+
+    body = f"""
+<div class="detail">
+<dl>
+<dt>발신번호</dt><dd>{_e(call.from_number or '-')}</dd>
+<dt>통화 시간</dt><dd>{_fmt_dt(call.started_at)} ~ {_fmt_dt(call.ended_at)}</dd>
+<dt>용건</dt><dd>{_e(call.intent or '-')}</dd>
+<dt>요약</dt><dd>{_e(call.summary or '-')}</dd>
+</dl></div>
+{ticket_html}
+<h1>대화 전문</h1>
+<div class="chat">{bubbles}</div>"""
+    return _page(f"통화 #{call.id}", body, "calls")

@@ -74,6 +74,40 @@ AI가 대답할 내용을 **문서로 미리 제공**할 수 있습니다. `know
 
 ---
 
+## Railway + PostgreSQL 배포
+
+이 저장소에는 `Dockerfile` 이 포함되어 있어 Railway가 자동으로 빌드합니다.
+
+1. [railway.app](https://railway.app) → **New Project** → **Deploy from GitHub repo** → 이 저장소 선택
+2. 같은 프로젝트에 **PostgreSQL 추가** (`+ New` → Database → PostgreSQL)
+3. 앱 서비스의 **Variables** 에 추가:
+
+   | 변수 | 값 |
+   |------|-----|
+   | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` (Railway 참조 문법) |
+   | `ANTHROPIC_API_KEY` | Claude API 키 |
+   | `TWILIO_AUTH_TOKEN` | Twilio Auth Token |
+   | `PUBLIC_BASE_URL` | 배포된 도메인 (예: `https://xxx.up.railway.app`) |
+
+4. **Settings → Networking → Generate Domain** 으로 공개 도메인 생성 → 그 값을 `PUBLIC_BASE_URL` 에 입력
+5. Twilio 콘솔에서 webhook을 `https://xxx.up.railway.app/voice/incoming` / `/voice/status` 로 지정
+
+⚠️ Railway의 디스크는 재배포 시 초기화되므로:
+- **DB는 반드시 PostgreSQL 사용** (SQLite 파일은 사라짐) — 위 2·3번이 그 설정입니다.
+- **knowledge/ 문서는 git에 커밋해서 배포**하세요 (서버에서 직접 수정하면 재배포 때 사라짐).
+
+## 웹 화면 (메뉴)
+
+배포된 주소로 접속하면 담당자가 쓰는 관리 화면이 열립니다:
+
+| 메뉴 | 경로 | 내용 |
+|------|------|------|
+| **대시보드** | `/` | 총 통화/티켓/미처리/긴급 통계, 팀별 미처리 업무, 최근 티켓 |
+| **티켓** | `/ui/tickets` | 팀·상태별 필터, 접수→처리중→완료 상태 변경 버튼 |
+| **통화 기록** | `/ui/calls` | 통화 목록, 클릭하면 대화 전문(채팅 형태)·요약·배정 티켓 상세 |
+
+---
+
 ## Twilio 연동 (실제 전화 받기)
 
 1. 서버를 공개 URL로 노출 (개발 중에는 `ngrok http 8000` 등)

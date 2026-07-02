@@ -17,6 +17,10 @@ class Base(DeclarativeBase):
 
 def _make_engine():
     url = get_settings().database_url
+    # Railway 등 일부 서비스는 postgres:// 접두사를 쓰는데 SQLAlchemy 2는
+    # postgresql:// 만 인식하므로 정규화
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql://", 1)
     # SQLite 파일 디렉터리 생성
     if url.startswith("sqlite:///") and "./" in url:
         path = url.replace("sqlite:///", "", 1)
