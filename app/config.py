@@ -23,6 +23,7 @@ class Settings(BaseSettings):
 
     # App
     database_url: str = "sqlite:///./data/callcenter.db"
+    knowledge_file: str = "./knowledge.md"
     public_base_url: str = ""
     max_turns: int = 8
 
