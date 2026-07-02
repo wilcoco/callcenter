@@ -24,28 +24,57 @@ _KNOWLEDGE_MAX_CHARS = 50_000
 _TEAM_LINES = "\n".join(f"- {t['key']}: {t['name']} — {t['description']}" for t in DEFAULT_TEAMS)
 
 
-def load_knowledge() -> str:
-    """회사 지식 문서(knowledge.md)를 읽어 반환. 없으면 빈 문자열.
+# knowledge/ 폴더에서 읽어들일 텍스트 파일 확장자
+_KNOWLEDGE_EXTS = {".md", ".txt"}
 
-    매 통화 턴마다 다시 읽으므로, 파일을 수정하면 재시작 없이 반영됩니다.
-    """
-    path = get_settings().knowledge_file
-    if not path or not os.path.exists(path):
-        return ""
+
+def _read_text(path: str) -> str:
     try:
         with open(path, encoding="utf-8") as f:
-            text = f.read().strip()
-    except OSError as exc:
+            return f.read().strip()
+    except (OSError, UnicodeDecodeError) as exc:
         log.warning("지식 문서 읽기 실패(%s): %s", path, exc)
         return ""
-    if len(text) > _KNOWLEDGE_MAX_CHARS:
+
+
+def load_knowledge() -> str:
+    """회사 지식 문서를 모두 읽어 하나의 텍스트로 반환.
+
+    - knowledge/ 폴더의 .md/.txt 파일 전부 (파일명 순)
+    - (하위호환) 루트의 knowledge.md 단일 파일
+    매 통화 턴마다 다시 읽으므로, 파일을 추가/수정하면 재시작 없이 반영됩니다.
+    """
+    settings = get_settings()
+    parts: list[str] = []
+
+    single = settings.knowledge_file
+    if single and os.path.isfile(single):
+        text = _read_text(single)
+        if text:
+            parts.append(text)
+
+    directory = settings.knowledge_dir
+    if directory and os.path.isdir(directory):
+        for name in sorted(os.listdir(directory)):
+            path = os.path.join(directory, name)
+            if not os.path.isfile(path):
+                continue
+            if os.path.splitext(name)[1].lower() not in _KNOWLEDGE_EXTS:
+                log.info("지식 폴더의 지원하지 않는 파일 형식을 건너뜀: %s", name)
+                continue
+            text = _read_text(path)
+            if text:
+                parts.append(f"[문서: {name}]\n{text}")
+
+    combined = "\n\n---\n\n".join(parts)
+    if len(combined) > _KNOWLEDGE_MAX_CHARS:
         log.warning(
-            "지식 문서가 %d자로 상한(%d자)을 초과하여 잘라서 사용합니다. "
+            "지식 문서 합계가 %d자로 상한(%d자)을 초과하여 잘라서 사용합니다. "
             "문서가 크면 RAG 방식 도입을 고려하세요.",
-            len(text), _KNOWLEDGE_MAX_CHARS,
+            len(combined), _KNOWLEDGE_MAX_CHARS,
         )
-        text = text[:_KNOWLEDGE_MAX_CHARS]
-    return text
+        combined = combined[:_KNOWLEDGE_MAX_CHARS]
+    return combined
 
 
 def _knowledge_block() -> str:
