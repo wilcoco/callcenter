@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     clawops_session: str = ""  # "realtime" | "pipeline" | ""(자동)
     clawops_signing_key: str = ""  # 설정 시 /clawops/webhook 서명 검증 활성화
     openai_api_key: str = ""  # 있으면 OpenAI Realtime 세션 사용 (키 1개로 충분)
+    openai_realtime_model: str = "gpt-realtime-2"  # Realtime 모델 변경용
+    openai_realtime_voice: str = "marin"
+    deepgram_model: str = "nova-3"  # 파이프라인 STT 모델 (한국어: nova-3 / nova-2)
     elevenlabs_voice_id: str = "uyVNoMrnUku1dZyVEXwD"  # ElevenLabs 한국어 음성(Anna Kim)
 
     # App

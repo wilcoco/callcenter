@@ -37,6 +37,10 @@ def build_voice_system_prompt() -> str:
 - 통화 시작 시: "안녕하세요, 무엇을 도와드릴까요?"로 인사.
 - 한 번에 한 가지만 질문하고, 목록 나열이나 특수기호는 쓰지 마세요.
 - 숫자·전화번호는 또박또박 읽기 좋게 말하세요.
+- 음성 인식이 불완전할 수 있습니다. 발화가 문맥상 어색하면 발음이 비슷한 단어로
+  잘못 들렸을 가능성을 고려해 문맥으로 해석하고, 확신이 없으면 추측하지 말고
+  "혹시 ~라고 말씀하신 게 맞을까요?"라고 정중히 확인하세요.
+- 회사·제품 이름, 수량, 날짜 같은 중요한 정보는 한 번 복창해서 확인하세요.
 
 종료 규칙:
 - 용건과 핵심 정보(무엇을, 언제, 어떤 문제)가 충분히 모이면
@@ -112,6 +116,8 @@ def _build_session():
         return OpenAIRealtime(
             api_key=s.openai_api_key or None,
             system_prompt=prompt,
+            model=s.openai_realtime_model,
+            voice=s.openai_realtime_voice,
             language="ko",
             greeting=True,
         )
@@ -119,7 +125,7 @@ def _build_session():
     from clawops.agent.pipeline import AnthropicLLM, DeepgramSTT, ElevenLabsTTS, PipelineSession
 
     return PipelineSession(
-        stt=DeepgramSTT(language="ko"),
+        stt=DeepgramSTT(model=s.deepgram_model, language="ko"),
         llm=AnthropicLLM(model=s.reply_model, temperature=0.6, max_tokens=1024),
         tts=ElevenLabsTTS(voice_id=s.elevenlabs_voice_id, language_code="ko"),
         system_prompt=prompt,
