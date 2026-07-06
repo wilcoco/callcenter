@@ -137,6 +137,44 @@ async def voice_status(
 
 
 # ---------------------------------------------------------------------------
+# ClawOps webhook (선택) — 통화 상태 이벤트 안전장치
+# ---------------------------------------------------------------------------
+@app.post("/clawops/webhook")
+async def clawops_webhook(request: Request):
+    """ClawOps 콘솔에 등록하는 webhook 수신부.
+
+    음성봇(WebSocket 에이전트)이 통화를 처리하므로 필수는 아니지만,
+    서버 재시작 등으로 call_end 이벤트를 놓친 통화도 여기서
+    분석·티켓 생성을 보장한다(멱등). CLAWOPS_SIGNING_KEY 설정 시 서명 검증.
+    """
+    form = dict(await request.form())
+    settings = get_settings()
+
+    if settings.clawops_signing_key:
+        from clawops.webhooks import Webhooks, WebhookVerificationError
+
+        base = settings.public_base_url.rstrip("/")
+        url = f"{base}/clawops/webhook" if base else str(request.url)
+        try:
+            Webhooks().verify(
+                url=url,
+                params={k: str(v) for k, v in form.items()},
+                signature=request.headers.get("X-Signature", ""),
+                signing_key=settings.clawops_signing_key,
+            )
+        except WebhookVerificationError:
+            raise HTTPException(status_code=403, detail="invalid ClawOps signature")
+
+    call_id = form.get("CallId") or form.get("call_id") or ""
+    status = (form.get("CallStatus") or form.get("status") or "").lower()
+    log.info("ClawOps webhook: call=%s status=%s", call_id, status)
+
+    if call_id and status in {"completed", "failed", "busy", "no-answer", "canceled"}:
+        callbot.record_call_end(str(call_id))
+    return JSONResponse({"ok": True})
+
+
+# ---------------------------------------------------------------------------
 # 조회 API
 # ---------------------------------------------------------------------------
 def _ticket_dict(t: Ticket) -> dict:

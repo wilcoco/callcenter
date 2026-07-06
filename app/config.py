@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     clawops_account_id: str = ""
     clawops_from_number: str = ""  # 발급받은 070 번호 (예: 07012345678)
     clawops_session: str = ""  # "realtime" | "pipeline" | ""(자동)
+    clawops_signing_key: str = ""  # 설정 시 /clawops/webhook 서명 검증 활성화
     openai_api_key: str = ""  # 있으면 OpenAI Realtime 세션 사용 (키 1개로 충분)
     elevenlabs_voice_id: str = "uyVNoMrnUku1dZyVEXwD"  # ElevenLabs 한국어 음성(Anna Kim)
 

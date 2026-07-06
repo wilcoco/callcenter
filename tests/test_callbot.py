@@ -58,6 +58,34 @@ def test_voice_prompt_contains_teams_and_knowledge():
     assert "회사_지식_문서" in prompt  # 저장소 기본 knowledge/ 문서 포함
 
 
+def test_clawops_webhook_finalizes_missed_call():
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    client = TestClient(app)
+    cid = "CO_WEBHOOK_1"
+    callbot.record_call_start(cid, "0701", "0702")
+    callbot.record_transcript(cid, "user", "설비가 고장나서 공정이 멈췄어요")
+    # 에이전트가 call_end를 놓친 상황 → webhook이 마무리
+    r = client.post("/clawops/webhook", data={"CallId": cid, "CallStatus": "completed"})
+    assert r.status_code == 200
+
+    call = _get_call(cid)
+    assert call.ticket is not None
+    assert call.ticket.team_key == "prodtech"  # 설비/고장/공정 → 생산기술팀
+
+
+def test_clawops_webhook_signature_rejected(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    s = get_settings()
+    monkeypatch.setattr(s, "clawops_signing_key", "test_key")
+    client = TestClient(app)
+    r = client.post("/clawops/webhook", data={"CallId": "CO_X", "CallStatus": "completed"})
+    assert r.status_code == 403  # 서명 없음 → 거부
+
+
 def test_session_type_selection(monkeypatch):
     s = get_settings()
     monkeypatch.setattr(s, "clawops_session", "")
