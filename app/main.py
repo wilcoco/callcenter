@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request
@@ -36,8 +37,14 @@ async def lifespan(app: FastAPI):
         await agent.disconnect()
 
 
-app = FastAPI(title="콜센터 자동 응대·팀 배정", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="캠스 콜센터 — 자동 응대·팀 배정", version="0.1.0", lifespan=lifespan)
 app.include_router(ui.router)
+
+_static_dir = os.path.join(os.path.dirname(__file__), "static")
+if os.path.isdir(_static_dir):
+    from fastapi.staticfiles import StaticFiles
+
+    app.mount("/static", StaticFiles(directory=_static_dir), name="static")
 
 
 # ---------------------------------------------------------------------------

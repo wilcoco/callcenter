@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import html
+import os
 
 from fastapi import APIRouter, Depends, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -20,7 +21,13 @@ _STYLE = """
 *{box-sizing:border-box}body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;
 margin:0;background:#f5f6f8;color:#222}
 nav{background:#1f2937;padding:0 1.5rem;display:flex;gap:.25rem;align-items:center}
-nav .brand{color:#fff;font-weight:700;padding:1rem .75rem 1rem 0;font-size:1.05rem}
+nav .brand{color:#fff;font-weight:700;padding:.7rem .9rem .7rem 0;font-size:1.05rem;
+display:flex;align-items:center;gap:.6rem}
+nav .brand img{height:30px;display:block}
+nav .brand .mark{font-size:1.25rem;font-weight:800;letter-spacing:.06em;
+background:linear-gradient(135deg,#60a5fa,#3b82f6);-webkit-background-clip:text;
+background-clip:text;color:transparent}
+nav .brand .sub{color:#9ca3af;font-size:.8rem;font-weight:500}
 nav a{color:#cbd5e1;text-decoration:none;padding:1rem .9rem;display:inline-block}
 nav a:hover{color:#fff}nav a.active{color:#fff;box-shadow:inset 0 -3px 0 #3b82f6}
 main{max-width:1000px;margin:1.5rem auto;padding:0 1rem}
@@ -78,14 +85,25 @@ def _e(text) -> str:
     return html.escape(str(text or ""))
 
 
+_STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+
+
+def _brand_html() -> str:
+    """app/static/logo.(svg|png|jpg) 파일이 있으면 이미지 로고, 없으면 워드마크."""
+    for name in ("logo.svg", "logo.png", "logo.jpg"):
+        if os.path.isfile(os.path.join(_STATIC_DIR, name)):
+            return f'<img src="/static/{name}" alt="주식회사 캠스"> <span class="sub">콜센터</span>'
+    return '<span class="mark">CAMS</span> <span class="sub">주식회사 캠스 콜센터</span>'
+
+
 def _page(title: str, body: str, active: str) -> str:
     def nav_cls(key: str) -> str:
         return ' class="active"' if key == active else ""
 
     return f"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{_e(title)} — 콜센터</title><style>{_STYLE}</style></head><body>
-<nav><span class="brand">📞 콜센터</span>
+<title>{_e(title)} — 캠스 콜센터</title><style>{_STYLE}</style></head><body>
+<nav><span class="brand">{_brand_html()}</span>
 <a href="/"{nav_cls('dash')}>대시보드</a>
 <a href="/ui/tickets"{nav_cls('tickets')}>티켓</a>
 <a href="/ui/calls"{nav_cls('calls')}>통화 기록</a>
