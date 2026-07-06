@@ -108,16 +108,38 @@ AI가 대답할 내용을 **문서로 미리 제공**할 수 있습니다. `know
 
 ---
 
-## Twilio 연동 (실제 전화 받기)
+## 전화 연동 ① — ClawOps 국내 070 번호 (권장)
+
+[ClawOps](https://claw-ops.com)로 **국내 070 번호**를 받아 실시간 AI 음성 통화로 응대합니다.
+고객은 국내 통화 요금만 부담하며, 기존 1588 등 대표번호 착신 연계도 가능합니다.
+
+**준비물 (환경변수 5개):**
+
+| 변수 | 발급처 |
+|------|--------|
+| `CLAWOPS_API_KEY`, `CLAWOPS_ACCOUNT_ID`, `CLAWOPS_FROM_NUMBER`(070번호) | [claw-ops.com](https://claw-ops.com) 가입 (3일 무료 체험) |
+| `DEEPGRAM_API_KEY` (음성 인식) | [deepgram.com](https://deepgram.com) — 무료 크레딧 제공 |
+| `ELEVENLABS_API_KEY` (음성 합성) | [elevenlabs.io](https://elevenlabs.io) — 무료 플랜 제공 |
+
+`ANTHROPIC_API_KEY` 포함 위 변수들을 채우면 서버 시작 시 음성봇이 자동으로 연결됩니다
+(`/health` 에서 `clawops_enabled: true` 확인). 미설정 시 웹/티켓 기능만 동작합니다.
+
+동작: 070 번호로 전화 → Deepgram이 한국어 음성 인식 → Claude가 실시간 응대(끼어들기 지원)
+→ ElevenLabs가 음성 합성 → 통화 종료 시 자동으로 요약·팀 배정·티켓 생성.
+AI가 용건 파악을 마치면 스스로 정중히 통화를 종료합니다.
+
+## 전화 연동 ② — Twilio (해외 번호, 선택)
+
+해외 번호가 필요한 경우 Twilio webhook 방식도 지원합니다.
 
 1. 서버를 공개 URL로 노출 (개발 중에는 `ngrok http 8000` 등)
-2. `.env` 의 `PUBLIC_BASE_URL` 에 공개 URL 입력 (예: `https://abcd.ngrok.io`)
-3. Twilio 콘솔 → 전화번호 → **Voice & Fax** 설정:
-   - **A CALL COMES IN**: `Webhook` → `https://<공개URL>/voice/incoming` (HTTP POST)
-   - **CALL STATUS CHANGES** (Status Callback): `https://<공개URL>/voice/status` (HTTP POST)
-4. `.env` 의 `TWILIO_AUTH_TOKEN` 을 채우면 인바운드 요청 **서명 검증**이 자동 활성화됩니다.
+2. `.env` 의 `PUBLIC_BASE_URL` 에 공개 URL 입력
+3. Twilio 콘솔 → 전화번호 → Voice 설정:
+   - **A CALL COMES IN**: `https://<공개URL>/voice/incoming` (HTTP POST)
+   - **CALL STATUS CHANGES**: `https://<공개URL>/voice/status` (HTTP POST)
+4. `TWILIO_AUTH_TOKEN` 설정 시 인바운드 서명 검증 자동 활성화
 
-이제 그 번호로 전화하면 AI가 응대하고, 끊으면 담당 팀 티켓이 생성됩니다.
+참고: Twilio는 한국(+82) 음성 번호를 제공하지 않아, 한국 고객 대상 서비스에는 ①을 사용하세요.
 
 ---
 
@@ -125,8 +147,9 @@ AI가 대답할 내용을 **문서로 미리 제공**할 수 있습니다. `know
 
 | 파일 | 역할 |
 |------|------|
-| `app/main.py` | FastAPI 앱 — Twilio webhook + 티켓/통화 조회 API + 대시보드 |
-| `app/twiml.py` | Twilio 음성 응답(TwiML) 생성 (인사·음성수집·종료) |
+| `app/main.py` | FastAPI 앱 — webhook + 티켓/통화 조회 API + 음성봇 기동 |
+| `app/callbot.py` | ClawOps 실시간 음성봇 (국내 070 번호, STT/LLM/TTS 파이프라인) |
+| `app/twiml.py` | Twilio 음성 응답(TwiML) 생성 (해외 번호용) |
 | `app/llm.py` | Claude 연동 — 실시간 응대(`next_turn`) / 통화 분석(`analyze_call`) + 규칙 폴백 |
 | `app/routing.py` | 키워드 기반 팀 분류·우선순위 추정 (폴백/검증) |
 | `app/services.py` | 통화·메시지·티켓 도메인 로직 (분석→티켓 생성, 멱등) |

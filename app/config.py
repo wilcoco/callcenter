@@ -21,6 +21,12 @@ class Settings(BaseSettings):
     voice_language: str = "ko-KR"
     twilio_voice: str = "Polly.Seoyeon"
 
+    # ClawOps (국내 070 번호 실시간 음성봇)
+    clawops_api_key: str = ""
+    clawops_account_id: str = ""
+    clawops_from_number: str = ""  # 발급받은 070 번호 (예: 07012345678)
+    elevenlabs_voice_id: str = "uyVNoMrnUku1dZyVEXwD"  # ElevenLabs 한국어 음성(Anna Kim)
+
     # App
     database_url: str = "sqlite:///./data/callcenter.db"
     knowledge_file: str = "./knowledge.md"

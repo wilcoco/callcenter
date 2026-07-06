@@ -1,0 +1,125 @@
+"""ClawOps 실시간 음성봇 연동.
+
+국내 070 번호(ClawOps)로 걸려온 전화를 실시간 음성 대화로 응대한다.
+- STT: Deepgram (한국어) / LLM: Claude / TTS: ElevenLabs
+- 대화 내용은 기존 파이프라인과 동일하게 DB에 기록되고,
+  통화 종료 시 분석 → 팀 배정 → 티켓 생성이 실행된다.
+
+필요 환경변수: CLAWOPS_API_KEY, CLAWOPS_ACCOUNT_ID, CLAWOPS_FROM_NUMBER,
+DEEPGRAM_API_KEY, ELEVENLABS_API_KEY, ANTHROPIC_API_KEY
+"""
+from __future__ import annotations
+
+import datetime as dt
+import logging
+
+from . import llm as llm_mod
+from . import services
+from .config import get_settings
+from .database import session_scope
+from .models import DEFAULT_TEAMS, Call
+
+log = logging.getLogger("callcenter.callbot")
+
+_TEAM_LINES = "\n".join(f"- {t['name']}: {t['description']}" for t in DEFAULT_TEAMS)
+
+
+def build_voice_system_prompt() -> str:
+    """실시간 음성 대화용 시스템 프롬프트 (지식 문서 포함)."""
+    return f"""당신은 회사 대표번호의 친절한 AI 전화 상담원입니다. 지금 고객과 실제 음성 통화 중입니다.
+
+역할:
+- 전화 건 분의 용건을 파악해 담당 팀이 처리할 수 있도록 필요한 정보를 모읍니다.
+- 회사 지식 문서에 답이 있는 질문은 그 자리에서 바로 답변합니다.
+
+말하기 규칙:
+- 한국어 존댓말. 음성으로 전달되므로 한 번에 1~2문장으로 짧게.
+- 통화 시작 시: "안녕하세요, 무엇을 도와드릴까요?"로 인사.
+- 한 번에 한 가지만 질문하고, 목록 나열이나 특수기호는 쓰지 마세요.
+- 숫자·전화번호는 또박또박 읽기 좋게 말하세요.
+
+종료 규칙:
+- 용건과 핵심 정보(무엇을, 언제, 어떤 문제)가 충분히 모이면
+  "담당 부서에 전달해 연락드리겠습니다"라고 정중히 마무리한 뒤 hang_up 도구로 통화를 종료하세요.
+- 고객이 끊겠다고 하거나 더 없다고 하면 인사 후 hang_up 하세요.
+
+담당 부서(참고용 — 고객에게 나열하지 말 것):
+{_TEAM_LINES}{llm_mod._knowledge_block()}"""
+
+
+# ---------------------------------------------------------------------------
+# 통화 이벤트 → DB 기록 (ClawOps SDK와 분리된 순수 함수 — 테스트 용이)
+# ---------------------------------------------------------------------------
+def record_call_start(call_id: str, from_number: str, to_number: str) -> None:
+    with session_scope() as db:
+        services.get_or_create_call(db, call_id, from_number=from_number, to_number=to_number)
+    log.info("통화 시작: %s (from %s)", call_id, from_number)
+
+
+def record_transcript(call_id: str, role: str, text: str) -> None:
+    """role: 'user'(고객) | 'assistant'(상담원)"""
+    mapped = "caller" if role == "user" else "agent"
+    if not text.strip():
+        return
+    with session_scope() as db:
+        call = services.get_or_create_call(db, call_id)
+        services.add_message(db, call, mapped, text.strip())
+
+
+def record_call_end(call_id: str) -> None:
+    """통화 종료 → 분석 + 팀 배정 + 티켓 생성 (멱등)."""
+    with session_scope() as db:
+        call = db.query(Call).filter_by(call_sid=call_id).one_or_none()
+        if call is None:
+            log.warning("종료 이벤트를 받았지만 통화 기록이 없음: %s", call_id)
+            return
+        call.ended_at = call.ended_at or dt.datetime.now(dt.timezone.utc)
+        ticket = services.finalize_call(db, call)
+    if ticket is not None:
+        log.info("통화 %s 종료 → 티켓 #%s [%s]", call_id, ticket.id, ticket.team_name)
+
+
+# ---------------------------------------------------------------------------
+# ClawOps 에이전트 구성
+# ---------------------------------------------------------------------------
+def clawops_enabled() -> bool:
+    s = get_settings()
+    return bool(s.clawops_api_key and s.clawops_account_id and s.clawops_from_number)
+
+
+def build_agent():
+    """ClawOpsAgent 생성 (clawops_enabled() 확인 후 호출할 것)."""
+    from clawops.agent import ClawOpsAgent
+    from clawops.agent.pipeline import AnthropicLLM, DeepgramSTT, ElevenLabsTTS, PipelineSession
+
+    s = get_settings()
+
+    session = PipelineSession(
+        stt=DeepgramSTT(language="ko"),
+        llm=AnthropicLLM(model=s.reply_model, temperature=0.6, max_tokens=1024),
+        tts=ElevenLabsTTS(voice_id=s.elevenlabs_voice_id, language_code="ko"),
+        system_prompt=build_voice_system_prompt(),
+        greeting=True,
+        language="ko",
+    )
+
+    agent = ClawOpsAgent(
+        api_key=s.clawops_api_key,
+        account_id=s.clawops_account_id,
+        from_=s.clawops_from_number,
+        session=session,
+    )
+
+    @agent.on("call_start")
+    async def _on_start(call):
+        record_call_start(call.call_id, call.from_number, call.to_number)
+
+    @agent.on("transcript")
+    async def _on_transcript(call, role, text):
+        record_transcript(call.call_id, role, text)
+
+    @agent.on("call_end")
+    async def _on_end(call):
+        record_call_end(call.call_id)
+
+    return agent

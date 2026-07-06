@@ -8,7 +8,7 @@ from fastapi import Depends, FastAPI, Form, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from sqlalchemy.orm import Session
 
-from . import llm, services, twiml, ui
+from . import callbot, llm, services, twiml, ui
 from .config import get_settings
 from .database import get_db, init_db
 from .models import Call, Team, Ticket
@@ -20,7 +20,20 @@ log = logging.getLogger("callcenter")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    agent = None
+    if callbot.clawops_enabled():
+        try:
+            agent = callbot.build_agent()
+            await agent.connect()
+            log.info("ClawOps 음성봇 연결됨 (번호: %s)", get_settings().clawops_from_number)
+        except Exception:
+            log.exception("ClawOps 음성봇 연결 실패 — 웹/티켓 기능은 정상 동작합니다")
+            agent = None
+    else:
+        log.info("ClawOps 미설정 — 음성봇 비활성 (CLAWOPS_API_KEY 등 필요)")
     yield
+    if agent is not None:
+        await agent.disconnect()
 
 
 app = FastAPI(title="콜센터 자동 응대·팀 배정", version="0.1.0", lifespan=lifespan)
@@ -160,7 +173,11 @@ def _call_dict(c: Call) -> dict:
 @app.get("/health")
 def health():
     s = get_settings()
-    return {"status": "ok", "llm_enabled": s.llm_enabled}
+    return {
+        "status": "ok",
+        "llm_enabled": s.llm_enabled,
+        "clawops_enabled": callbot.clawops_enabled(),
+    }
 
 
 @app.get("/teams")
