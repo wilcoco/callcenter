@@ -23,7 +23,8 @@ margin:0;background:#f5f6f8;color:#222}
 nav{background:#1f2937;padding:0 1.5rem;display:flex;gap:.25rem;align-items:center}
 nav .brand{color:#fff;font-weight:700;padding:.7rem .9rem .7rem 0;font-size:1.05rem;
 display:flex;align-items:center;gap:.6rem}
-nav .brand img{height:30px;display:block}
+nav .brand img{height:40px;display:block;background:#fff;border-radius:9px;padding:3px 6px}
+nav .brand .name{color:#fff;font-weight:700;font-size:1.02rem}
 nav .brand .mark{font-size:1.25rem;font-weight:800;letter-spacing:.06em;
 background:linear-gradient(135deg,#60a5fa,#3b82f6);-webkit-background-clip:text;
 background-clip:text;color:transparent}
@@ -89,10 +90,16 @@ _STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
 
 def _brand_html() -> str:
-    """app/static/logo.(svg|png|jpg) 파일이 있으면 이미지 로고, 없으면 워드마크."""
-    for name in ("logo.svg", "logo.png", "logo.jpg"):
+    """app/static/logo.(png|jpg|svg) 파일이 있으면 이미지 로고, 없으면 워드마크.
+
+    png/jpg를 먼저 찾으므로, 실제 로고 원본 파일을 올리면 SVG 재현본을 대체한다.
+    """
+    for name in ("logo.png", "logo.jpg", "logo.svg"):
         if os.path.isfile(os.path.join(_STATIC_DIR, name)):
-            return f'<img src="/static/{name}" alt="주식회사 캠스"> <span class="sub">콜센터</span>'
+            return (
+                f'<img src="/static/{name}" alt="주식회사 캠스">'
+                '<span class="name">주식회사 캠스</span> <span class="sub">콜센터</span>'
+            )
     return '<span class="mark">CAMS</span> <span class="sub">주식회사 캠스 콜센터</span>'
 
 
