@@ -233,6 +233,23 @@ class Ticket(Base):
     call: Mapped["Call"] = relationship(back_populates="ticket")
 
 
+class KnowledgeDoc(Base):
+    """웹 화면에서 등록하는 회사 지식 문서 (규정/FAQ 등).
+
+    knowledge/ 폴더의 파일 문서와 함께 AI 응대 프롬프트에 포함된다.
+    DB에 저장되므로 재배포와 무관하게 유지된다.
+    """
+
+    __tablename__ = "knowledge_docs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    title: Mapped[str] = mapped_column(String(255))
+    content: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime, default=_utcnow, onupdate=_utcnow
+    )
+
+
 def seed_default_teams(db: Session) -> None:
     """DEFAULT_TEAMS 기준으로 teams 테이블 동기화 (추가/갱신/삭제).
 

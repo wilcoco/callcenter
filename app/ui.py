@@ -9,7 +9,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .database import get_db
-from .models import Call, Team, Ticket
+from .models import Call, KnowledgeDoc, Team, Ticket
 
 router = APIRouter()
 
@@ -58,6 +58,19 @@ button.act{border:1px solid #ccc;background:#fff;border-radius:6px;padding:.25re
 cursor:pointer;font-size:.8rem;margin-right:.25rem}
 button.act:hover{background:#f3f4f6}
 .empty{color:#888;padding:2rem;text-align:center}
+input[type=text],textarea{width:100%;border:1px solid #ccc;border-radius:6px;padding:.55rem .7rem;
+font-size:.95rem;font-family:inherit;background:#fff}
+textarea{min-height:320px;line-height:1.5}
+label{display:block;margin:.9rem 0 .3rem;color:#555;font-size:.85rem}
+button.primary{background:#1f2937;color:#fff;border:none;border-radius:6px;
+padding:.55rem 1.2rem;font-size:.95rem;cursor:pointer;margin-top:1rem}
+button.primary:hover{background:#374151}
+a.btn{display:inline-block;background:#1f2937;color:#fff;border-radius:6px;
+padding:.45rem .9rem;text-decoration:none;font-size:.88rem;margin-bottom:.8rem}
+button.danger{border:1px solid #fca5a5;background:#fff;color:#b91c1c;border-radius:6px;
+padding:.25rem .6rem;cursor:pointer;font-size:.8rem}
+button.danger:hover{background:#fef2f2}
+.hint{color:#777;font-size:.83rem;margin:.4rem 0 1rem}
 """
 
 
@@ -76,6 +89,7 @@ def _page(title: str, body: str, active: str) -> str:
 <a href="/"{nav_cls('dash')}>대시보드</a>
 <a href="/ui/tickets"{nav_cls('tickets')}>티켓</a>
 <a href="/ui/calls"{nav_cls('calls')}>통화 기록</a>
+<a href="/ui/knowledge"{nav_cls('knowledge')}>지식 문서</a>
 </nav><main><h1>{_e(title)}</h1>{body}</main></body></html>"""
 
 
@@ -214,6 +228,91 @@ def change_ticket_status(
     ticket.status = status
     db.flush()
     return RedirectResponse("/ui/tickets", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# 지식 문서 (회사 규정/FAQ — AI 응대에 반영)
+# ---------------------------------------------------------------------------
+@router.get("/ui/knowledge", response_class=HTMLResponse)
+def knowledge_page(db: Session = Depends(get_db)):
+    docs = db.query(KnowledgeDoc).order_by(KnowledgeDoc.title).all()
+    rows = "".join(
+        f'<tr><td><a class="row-link" href="/ui/knowledge/{d.id}">{_e(d.title)}</a></td>'
+        f"<td>{len(d.content or '')}자</td><td>{_fmt_dt(d.updated_at)}</td>"
+        f'<td><form class="inline" method="post" action="/ui/knowledge/{d.id}/delete" '
+        f"onsubmit=\"return confirm('『{_e(d.title)}』 문서를 삭제할까요?')\">"
+        f'<button class="danger">삭제</button></form></td></tr>'
+        for d in docs
+    ) or '<tr><td colspan="4" class="empty">등록된 문서가 없습니다. 회사 규정·FAQ를 등록해 보세요.</td></tr>'
+
+    body = f"""
+<p class="hint">여기 등록한 문서는 AI 상담원이 통화 중 답변 근거로 사용합니다.
+등록·수정 즉시 다음 통화부터 반영됩니다. 민감 정보(급여 등)는 올리지 마세요.</p>
+<a class="btn" href="/ui/knowledge/new">+ 새 문서</a>
+<table><tr><th>제목</th><th>분량</th><th>수정일</th><th></th></tr>{rows}</table>"""
+    return _page("지식 문서", body, "knowledge")
+
+
+def _knowledge_form(action: str, title: str = "", content: str = "") -> str:
+    return f"""
+<form method="post" action="{action}">
+<label>문서 제목 (예: 휴가규정, 경비처리 절차)</label>
+<input type="text" name="title" required maxlength="255" value="{_e(title)}">
+<label>내용</label>
+<textarea name="content" placeholder="규정/FAQ 내용을 붙여넣으세요. 일반 텍스트면 충분합니다.">{_e(content)}</textarea>
+<button class="primary">저장</button>
+</form>"""
+
+
+@router.get("/ui/knowledge/new", response_class=HTMLResponse)
+def knowledge_new_page():
+    return _page("새 지식 문서", _knowledge_form("/ui/knowledge"), "knowledge")
+
+
+@router.post("/ui/knowledge")
+def knowledge_create(
+    title: str = Form(...), content: str = Form(""), db: Session = Depends(get_db)
+):
+    db.add(KnowledgeDoc(title=title.strip() or "제목 없음", content=content))
+    db.flush()
+    return RedirectResponse("/ui/knowledge", status_code=303)
+
+
+@router.get("/ui/knowledge/{doc_id}", response_class=HTMLResponse)
+def knowledge_edit_page(doc_id: int, db: Session = Depends(get_db)):
+    doc = db.get(KnowledgeDoc, doc_id)
+    if not doc:
+        raise HTTPException(404, "document not found")
+    return _page(
+        f"문서 수정 — {doc.title}",
+        _knowledge_form(f"/ui/knowledge/{doc.id}", doc.title, doc.content or ""),
+        "knowledge",
+    )
+
+
+@router.post("/ui/knowledge/{doc_id}")
+def knowledge_update(
+    doc_id: int,
+    title: str = Form(...),
+    content: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    doc = db.get(KnowledgeDoc, doc_id)
+    if not doc:
+        raise HTTPException(404, "document not found")
+    doc.title = title.strip() or doc.title
+    doc.content = content
+    db.flush()
+    return RedirectResponse("/ui/knowledge", status_code=303)
+
+
+@router.post("/ui/knowledge/{doc_id}/delete")
+def knowledge_delete(doc_id: int, db: Session = Depends(get_db)):
+    doc = db.get(KnowledgeDoc, doc_id)
+    if doc:
+        db.delete(doc)
+        db.flush()
+    return RedirectResponse("/ui/knowledge", status_code=303)
 
 
 # ---------------------------------------------------------------------------

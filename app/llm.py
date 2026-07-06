@@ -66,6 +66,19 @@ def load_knowledge() -> str:
             if text:
                 parts.append(f"[문서: {name}]\n{text}")
 
+    # 웹 화면(지식 문서 메뉴)에서 등록한 DB 문서
+    try:
+        from .database import session_scope
+        from .models import KnowledgeDoc
+
+        with session_scope() as db:
+            for doc in db.query(KnowledgeDoc).order_by(KnowledgeDoc.title).all():
+                content = (doc.content or "").strip()
+                if content:
+                    parts.append(f"[문서: {doc.title}]\n{content}")
+    except Exception as exc:
+        log.warning("DB 지식 문서 로드 실패: %s", exc)
+
     combined = "\n\n---\n\n".join(parts)
     if len(combined) > _KNOWLEDGE_MAX_CHARS:
         log.warning(
