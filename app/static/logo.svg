@@ -1,8 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 230 200">
-  <!-- 주식회사 캠스 로고 (재현본) : 파란 링(C) + 빨간 띠의 AMS -->
-  <circle cx="100" cy="100" r="76" fill="none" stroke="#1d3f94" stroke-width="34"/>
-  <rect x="26" y="77" width="204" height="46" fill="#d81f26" stroke="#ffffff" stroke-width="5"/>
-  <text x="128" y="112" font-family="Arial, Helvetica, sans-serif" font-size="42"
-        font-weight="bold" font-style="italic" fill="#ffffff" letter-spacing="6"
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 170 170">
+  <!-- 주식회사 캠스 로고 -->
+  <circle cx="85" cy="85" r="62" fill="none" stroke="#1d3c8e" stroke-width="38"/>
+  <rect x="0" y="63" width="170" height="44" fill="#dc1e23" stroke="#ffffff" stroke-width="3.5"/>
+  <text x="108" y="100" font-family="Arial, Helvetica, sans-serif" font-size="38"
+        font-weight="900" font-style="italic" fill="#ffffff" letter-spacing="3"
         text-anchor="middle">AMS</text>
 </svg>
