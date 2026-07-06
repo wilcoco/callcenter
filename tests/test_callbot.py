@@ -58,6 +58,17 @@ def test_voice_prompt_contains_teams_and_knowledge():
     assert "회사_지식_문서" in prompt  # 저장소 기본 knowledge/ 문서 포함
 
 
+def test_session_type_selection(monkeypatch):
+    s = get_settings()
+    monkeypatch.setattr(s, "clawops_session", "")
+    monkeypatch.setattr(s, "openai_api_key", "")
+    assert callbot.pick_session_type() == "pipeline"
+    monkeypatch.setattr(s, "openai_api_key", "sk-xxx")
+    assert callbot.pick_session_type() == "realtime"
+    monkeypatch.setattr(s, "clawops_session", "pipeline")
+    assert callbot.pick_session_type() == "pipeline"  # 강제 지정 우선
+
+
 def test_clawops_disabled_without_keys(monkeypatch):
     s = get_settings()
     monkeypatch.setattr(s, "clawops_api_key", "")

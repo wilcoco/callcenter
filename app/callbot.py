@@ -87,27 +87,57 @@ def clawops_enabled() -> bool:
     return bool(s.clawops_api_key and s.clawops_account_id and s.clawops_from_number)
 
 
-def build_agent():
-    """ClawOpsAgent 생성 (clawops_enabled() 확인 후 호출할 것)."""
-    from clawops.agent import ClawOpsAgent
+def pick_session_type() -> str:
+    """사용할 음성 세션 방식을 결정.
+
+    - openai_api_key 가 있으면 'realtime' (OpenAI Realtime — 키 1개로 STT/LLM/TTS 모두 처리)
+    - deepgram+elevenlabs 키가 있으면 'pipeline' (Deepgram STT + Claude + ElevenLabs TTS)
+    - CLAWOPS_SESSION 환경변수로 강제 지정 가능
+    """
+    s = get_settings()
+    if s.clawops_session in {"realtime", "pipeline"}:
+        return s.clawops_session
+    if s.openai_api_key:
+        return "realtime"
+    return "pipeline"
+
+
+def _build_session():
+    s = get_settings()
+    prompt = build_voice_system_prompt()
+
+    if pick_session_type() == "realtime":
+        from clawops.agent import OpenAIRealtime
+
+        return OpenAIRealtime(
+            api_key=s.openai_api_key or None,
+            system_prompt=prompt,
+            language="ko",
+            greeting=True,
+        )
+
     from clawops.agent.pipeline import AnthropicLLM, DeepgramSTT, ElevenLabsTTS, PipelineSession
 
-    s = get_settings()
-
-    session = PipelineSession(
+    return PipelineSession(
         stt=DeepgramSTT(language="ko"),
         llm=AnthropicLLM(model=s.reply_model, temperature=0.6, max_tokens=1024),
         tts=ElevenLabsTTS(voice_id=s.elevenlabs_voice_id, language_code="ko"),
-        system_prompt=build_voice_system_prompt(),
+        system_prompt=prompt,
         greeting=True,
         language="ko",
     )
 
+
+def build_agent():
+    """ClawOpsAgent 생성 (clawops_enabled() 확인 후 호출할 것)."""
+    from clawops.agent import ClawOpsAgent
+
+    s = get_settings()
     agent = ClawOpsAgent(
         api_key=s.clawops_api_key,
         account_id=s.clawops_account_id,
         from_=s.clawops_from_number,
-        session=session,
+        session=_build_session(),
     )
 
     @agent.on("call_start")

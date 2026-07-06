@@ -113,20 +113,22 @@ AI가 대답할 내용을 **문서로 미리 제공**할 수 있습니다. `know
 [ClawOps](https://claw-ops.com)로 **국내 070 번호**를 받아 실시간 AI 음성 통화로 응대합니다.
 고객은 국내 통화 요금만 부담하며, 기존 1588 등 대표번호 착신 연계도 가능합니다.
 
-**준비물 (환경변수 5개):**
+**공통 준비물:** [claw-ops.com](https://claw-ops.com) 가입(3일 무료 체험) 후
+`CLAWOPS_API_KEY` / `CLAWOPS_ACCOUNT_ID` / `CLAWOPS_FROM_NUMBER`(070번호) 설정.
 
-| 변수 | 발급처 |
-|------|--------|
-| `CLAWOPS_API_KEY`, `CLAWOPS_ACCOUNT_ID`, `CLAWOPS_FROM_NUMBER`(070번호) | [claw-ops.com](https://claw-ops.com) 가입 (3일 무료 체험) |
-| `DEEPGRAM_API_KEY` (음성 인식) | [deepgram.com](https://deepgram.com) — 무료 크레딧 제공 |
-| `ELEVENLABS_API_KEY` (음성 합성) | [elevenlabs.io](https://elevenlabs.io) — 무료 플랜 제공 |
+**음성 처리 방식 — 둘 중 하나 선택 (자동 감지):**
 
-`ANTHROPIC_API_KEY` 포함 위 변수들을 채우면 서버 시작 시 음성봇이 자동으로 연결됩니다
-(`/health` 에서 `clawops_enabled: true` 확인). 미설정 시 웹/티켓 기능만 동작합니다.
+| 방식 | 필요한 키 | 특징 |
+|------|-----------|------|
+| **A. OpenAI Realtime** (간단) | `OPENAI_API_KEY` 1개 | STT/대화/TTS를 한 번에 처리, 지연 짧음 |
+| **B. 파이프라인** | `DEEPGRAM_API_KEY` + `ELEVENLABS_API_KEY` | 대화 LLM으로 Claude 사용 (`ANTHROPIC_API_KEY`) |
 
-동작: 070 번호로 전화 → Deepgram이 한국어 음성 인식 → Claude가 실시간 응대(끼어들기 지원)
-→ ElevenLabs가 음성 합성 → 통화 종료 시 자동으로 요약·팀 배정·티켓 생성.
-AI가 용건 파악을 마치면 스스로 정중히 통화를 종료합니다.
+`OPENAI_API_KEY` 가 있으면 A, 없으면 B를 자동 선택합니다 (`CLAWOPS_SESSION`으로 강제 지정 가능).
+어느 쪽이든 **통화 종료 후 분석·팀 배정은 Claude**(`ANTHROPIC_API_KEY`)가 수행합니다.
+
+설정이 채워지면 서버 시작 시 음성봇이 자동 연결됩니다 (`/health`에서 `clawops_enabled: true` 확인).
+동작: 070 번호로 전화 → 실시간 AI 응대(끼어들기 지원) → 통화 종료 시 자동으로
+요약·팀 배정·티켓 생성. AI가 용건 파악을 마치면 스스로 정중히 통화를 종료합니다.
 
 ## 전화 연동 ② — Twilio (해외 번호, 선택)
 
