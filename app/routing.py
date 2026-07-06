@@ -12,14 +12,22 @@ _HIGH_WORDS = ["오류", "에러", "안돼", "안 돼", "환불", "고장", "멈
 
 
 def keyword_route(text: str) -> str:
-    """키워드 매칭으로 팀 key를 반환. 매칭 없으면 general."""
+    """키워드 매칭으로 팀 key를 반환. 매칭 없으면 general.
+
+    팀/임원 이름을 직접 말한 경우("생산기술팀에 전달해주세요")가
+    가장 강한 신호이므로 이름 매칭에 큰 가중치를 준다.
+    """
     if not text:
         return DEFAULT_TEAM_KEY
     lowered = text.lower()
+    nospace = lowered.replace(" ", "")
     best_key = DEFAULT_TEAM_KEY
     best_score = 0
     for spec in DEFAULT_TEAMS:
         score = sum(1 for kw in spec["keywords"] if kw.lower() in lowered)
+        name = spec["name"].lower().replace(" ", "")
+        if name and name in nospace:
+            score += 10
         if score > best_score:
             best_score = score
             best_key = spec["key"]

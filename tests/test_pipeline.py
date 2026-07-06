@@ -21,7 +21,7 @@ def test_incoming_greets_and_gathers():
     r = client.post("/voice/incoming", data={"CallSid": "CA_T1", "From": "+8210", "To": "+8225"})
     assert r.status_code == 200
     assert "Gather" in r.text
-    assert "도와드릴까요" in r.text
+    assert "캠스" in r.text
 
 
 def test_refund_call_creates_mgmt_ticket():

@@ -5,8 +5,11 @@ from twilio.twiml.voice_response import Gather, VoiceResponse
 
 from .config import get_settings
 
-GREETING = "안녕하세요, 무엇을 도와드릴까요? 용건을 말씀해 주세요."
-GOODBYE = "문의 주셔서 감사합니다. 담당 팀에서 신속히 연락드리겠습니다. 좋은 하루 되세요."
+GREETING = (
+    "주식회사 캠스 안내전화입니다. 구성원의 경우 담당팀이나 담당 임원을 지정하여 "
+    "관련 내용을 남겨 주세요. 빠르게 회신하겠습니다."
+)
+GOODBYE = "말씀하신 내용은 담당 팀에 전달하겠습니다. 빠르게 회신드리겠습니다. 감사합니다."
 NO_INPUT = "죄송합니다, 잘 못 들었어요. 다시 말씀해 주시겠어요?"
 
 
