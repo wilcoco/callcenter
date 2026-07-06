@@ -75,6 +75,25 @@ def test_clawops_webhook_finalizes_missed_call():
     assert call.ticket.team_key == "prodtech"  # 설비/고장/공정 → 생산기술팀
 
 
+def test_clawops_webhook_json_event_finalizes():
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    client = TestClient(app)
+    cid = "CO_WEBHOOK_JSON"
+    callbot.record_call_start(cid, "0701", "0702")
+    callbot.record_transcript(cid, "user", "자재 입고 일정 문의드립니다")
+    # 콘솔 webhook 형식: JSON + event 필드
+    r = client.post(
+        "/clawops/webhook",
+        json={"event": "transcript.completed", "data": {"call_id": cid}},
+    )
+    assert r.status_code == 200
+    call = _get_call(cid)
+    assert call.ticket is not None
+    assert call.ticket.team_key == "material"  # 자재/입고 → 자재관리팀
+
+
 def test_clawops_webhook_signature_rejected(monkeypatch):
     from fastapi.testclient import TestClient
     from app.main import app

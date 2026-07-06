@@ -147,30 +147,54 @@ async def clawops_webhook(request: Request):
     서버 재시작 등으로 call_end 이벤트를 놓친 통화도 여기서
     분석·티켓 생성을 보장한다(멱등). CLAWOPS_SIGNING_KEY 설정 시 서명 검증.
     """
-    form = dict(await request.form())
     settings = get_settings()
+    content_type = request.headers.get("content-type", "")
 
-    if settings.clawops_signing_key:
-        from clawops.webhooks import Webhooks, WebhookVerificationError
-
-        base = settings.public_base_url.rstrip("/")
-        url = f"{base}/clawops/webhook" if base else str(request.url)
+    if "json" in content_type:
         try:
-            Webhooks().verify(
-                url=url,
-                params={k: str(v) for k, v in form.items()},
-                signature=request.headers.get("X-Signature", ""),
-                signing_key=settings.clawops_signing_key,
-            )
-        except WebhookVerificationError:
-            raise HTTPException(status_code=403, detail="invalid ClawOps signature")
+            payload = await request.json()
+        except Exception:
+            payload = {}
+        if not isinstance(payload, dict):
+            payload = {}
+    else:
+        payload = dict(await request.form())
+        if settings.clawops_signing_key:
+            from clawops.webhooks import Webhooks, WebhookVerificationError
 
-    call_id = form.get("CallId") or form.get("call_id") or ""
-    status = (form.get("CallStatus") or form.get("status") or "").lower()
-    log.info("ClawOps webhook: call=%s status=%s", call_id, status)
+            base = settings.public_base_url.rstrip("/")
+            url = f"{base}/clawops/webhook" if base else str(request.url)
+            try:
+                Webhooks().verify(
+                    url=url,
+                    params={k: str(v) for k, v in payload.items()},
+                    signature=request.headers.get("X-Signature", ""),
+                    signing_key=settings.clawops_signing_key,
+                )
+            except WebhookVerificationError:
+                raise HTTPException(status_code=403, detail="invalid ClawOps signature")
 
-    if call_id and status in {"completed", "failed", "busy", "no-answer", "canceled"}:
-        callbot.record_call_end(str(call_id))
+    def _find(keys: tuple[str, ...]) -> str:
+        for source in (payload, payload.get("data"), payload.get("payload")):
+            if isinstance(source, dict):
+                for k in keys:
+                    v = source.get(k)
+                    if isinstance(v, (str, int)):
+                        return str(v)
+        return ""
+
+    event = str(payload.get("event") or "").lower()
+    call_id = _find(("call_id", "callId", "CallId"))
+    status = _find(("CallStatus", "status")).lower()
+    log.info("ClawOps webhook: event=%s call=%s status=%s", event, call_id, status)
+
+    # 통화가 끝났음을 뜻하는 신호면 분석·티켓 생성을 보장 (멱등)
+    call_done = (
+        event in {"transcript.completed", "summary.completed", "recording.completed"}
+        or status in {"completed", "failed", "busy", "no-answer", "canceled"}
+    )
+    if call_id and call_done:
+        callbot.record_call_end(call_id)
     return JSONResponse({"ok": True})
 
 
