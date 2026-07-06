@@ -25,7 +25,7 @@ def test_tickets_page_lists_ticket_and_filters():
     assert r.status_code == 200
     assert "환불" in r.text
 
-    r = client.get("/ui/tickets", params={"team": "billing"})
+    r = client.get("/ui/tickets", params={"team": "mgmt"})
     assert r.status_code == 200
 
 

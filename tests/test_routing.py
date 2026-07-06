@@ -1,16 +1,24 @@
 from app import routing
 
 
-def test_billing_keyword_routes_to_billing():
-    assert routing.keyword_route("결제 환불 받고 싶어요") == "billing"
+def test_refund_keyword_routes_to_mgmt():
+    assert routing.keyword_route("결제 환불 받고 싶어요") == "mgmt"
 
 
-def test_tech_keyword_routes_to_tech():
-    assert routing.keyword_route("로그인하면 자꾸 오류가 나고 접속이 안돼요") == "tech"
+def test_it_keyword_routes_to_it():
+    assert routing.keyword_route("로그인하면 자꾸 오류가 나고 접속이 안돼요") == "it"
 
 
-def test_sales_keyword_routes_to_sales():
-    assert routing.keyword_route("신규 도입 견적 상담 받고 싶습니다") == "sales"
+def test_quote_keyword_routes_to_sales():
+    assert routing.keyword_route("견적 받아서 주문하고 싶습니다") == "sales"
+
+
+def test_quality_claim_routes_to_quality():
+    assert routing.keyword_route("납품받은 제품에 불량이 있어 클레임 접수하려고요") == "quality"
+
+
+def test_labor_dispute_routes_to_exec_labor():
+    assert routing.keyword_route("임금체불 문제로 노동청에 진정을 넣었습니다") == "exec_labor"
 
 
 def test_unknown_defaults_to_general():
@@ -35,5 +43,6 @@ def test_agent_speaker_label_does_not_leak_into_routing():
 
 def test_normalize_invalid_team_key():
     assert routing.normalize_team_key("not-a-team") == "general"
-    assert routing.normalize_team_key("billing") == "billing"
+    assert routing.normalize_team_key("quality") == "quality"
+    assert routing.normalize_team_key("exec_labor") == "exec_labor"
     assert routing.normalize_team_key(None) == "general"

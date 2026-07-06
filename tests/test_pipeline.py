@@ -24,14 +24,14 @@ def test_incoming_greets_and_gathers():
     assert "도와드릴까요" in r.text
 
 
-def test_billing_call_creates_billing_ticket():
-    sid = "CA_BILL_1"
+def test_refund_call_creates_mgmt_ticket():
+    sid = "CA_MGMT_1"
     _run_call(sid, ["결제가 두 번 돼서 환불 받고 싶어요", "카드로 결제했어요", "그게 다예요"])
 
-    tickets = client.get("/tickets", params={"team": "billing"}).json()
+    tickets = client.get("/tickets", params={"team": "mgmt"}).json()
     assert any(t["call_id"] for t in tickets)
-    mine = [t for t in tickets if t["team_key"] == "billing"]
-    assert mine, "billing 티켓이 생성되어야 함"
+    mine = [t for t in tickets if t["team_key"] == "mgmt"]
+    assert mine, "경영관리팀 티켓이 생성되어야 함"
     assert mine[0]["status"] == "open"
     assert mine[0]["summary"]
 
@@ -61,4 +61,12 @@ def test_empty_call_creates_no_ticket():
 def test_health_and_teams():
     assert client.get("/health").json()["status"] == "ok"
     teams = client.get("/teams").json()
-    assert {t["key"] for t in teams} >= {"billing", "tech", "sales", "support", "general"}
+    keys = {t["key"] for t in teams}
+    assert keys >= {
+        "production", "prodtech", "quality", "partner", "material", "sales",
+        "mgmt", "it", "hampyeong", "escon", "design", "rnd", "general",
+    }
+    assert keys >= {
+        "exec_finance", "exec_labor", "ceo_mgmt", "ceo_prod",
+        "exec_prod", "exec_quality", "exec_rnd",
+    }
