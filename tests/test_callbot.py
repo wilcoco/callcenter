@@ -184,6 +184,23 @@ def test_clawops_webhook_signature_rejected(monkeypatch):
     assert r.status_code == 403  # 서명 없음 → 거부
 
 
+def test_active_caller_tracking():
+    callbot.set_active_caller("C1", "+821011112222")
+    assert callbot.get_active_caller_number() == "+821011112222"
+    callbot.set_active_caller("C2", "07033334444")
+    assert callbot.get_active_caller_number() == "07033334444"  # 최근 통화
+    callbot.clear_active_caller("C2")
+    assert callbot.get_active_caller_number() == "+821011112222"
+    callbot.clear_active_caller("C1")
+    assert callbot.get_active_caller_number() == ""
+
+
+def test_voice_prompt_mentions_caller_number_tool():
+    prompt = callbot.build_voice_system_prompt()
+    assert "get_caller_number" in prompt
+    assert "이 번호로 회신드리면 될까요" in prompt
+
+
 def test_session_type_selection(monkeypatch):
     s = get_settings()
     monkeypatch.setattr(s, "clawops_session", "")

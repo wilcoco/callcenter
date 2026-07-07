@@ -40,10 +40,11 @@ def build_voice_system_prompt() -> str:
 1. 문의 내용을 듣습니다. 모호하면 한 가지씩 질문해서 구체화합니다 (무엇을, 언제까지, 왜).
 2. 반드시 누구신지 여쭤봅니다. 예: "실례지만 어디의 누구신지 말씀해 주시겠어요?"
    (회사/소속과 성함. 구성원이면 팀과 성함.)
-3. 회신 연락처는 번호를 불러달라고 하지 말고, 먼저 이렇게 확인합니다:
-   "회신은 지금 전화 주신 번호로 드리면 될까요?"
+3. 회신 연락처 확인: get_caller_number 도구로 발신번호를 조회한 뒤, 번호를 또박또박
+   불러주며 확인합니다. 예: "지금 010 1234 5678 번으로 전화 주셨네요. 이 번호로 회신드리면 될까요?"
    - "예/네" → 그대로 접수하고 넘어갑니다 (번호를 다시 묻지 않음).
-   - 다른 번호로 해달라고 하면 → 그 번호를 듣고 반드시 한 번 복창해서 확인합니다.
+   - 아니라고 하거나 다른 번호를 원하면 → 그 번호를 듣고 반드시 한 번 복창해서 확인합니다.
+   - 도구가 unknown을 반환하면(번호 표시제한) "회신받으실 연락처를 말씀해 주시겠어요?"라고 직접 여쭤봅니다.
 4. 마지막에 문의 내용을 한 문장으로 요약 복창하고
    "확인 후 빠르게 회신드리겠습니다. 감사합니다."라고 마무리합니다.
 
@@ -64,6 +65,27 @@ def build_voice_system_prompt() -> str:
 
 담당 부서(참고용 — 고객에게 나열하지 말 것):
 {_TEAM_LINES}{llm_mod._knowledge_block()}"""
+
+
+# ---------------------------------------------------------------------------
+# 활성 통화 발신번호 추적 — AI가 통화 중 get_caller_number 도구로 조회
+# (단일 회선 전제. 동시 통화 시 가장 최근 통화의 번호가 반환될 수 있음)
+# ---------------------------------------------------------------------------
+_active_callers: dict[str, str] = {}
+
+
+def set_active_caller(call_id: str, number: str) -> None:
+    _active_callers[call_id] = number or ""
+
+
+def clear_active_caller(call_id: str) -> None:
+    _active_callers.pop(call_id, None)
+
+
+def get_active_caller_number() -> str:
+    if not _active_callers:
+        return ""
+    return list(_active_callers.values())[-1]
 
 
 # ---------------------------------------------------------------------------
@@ -206,6 +228,7 @@ def build_agent():
 
     @agent.on("call_start")
     async def _on_start(call):
+        set_active_caller(call.call_id, call.from_number)
         record_call_start(call.call_id, call.from_number, call.to_number)
 
     @agent.on("transcript")
@@ -214,6 +237,14 @@ def build_agent():
 
     @agent.on("call_end")
     async def _on_end(call):
+        clear_active_caller(call.call_id)
         record_call_end(call.call_id)
+
+    @agent.tool
+    async def get_caller_number() -> str:
+        """지금 통화 중인 발신자의 전화번호(콜러ID)를 조회합니다.
+        회신 번호를 확인할 때 사용하세요. 번호 표시제한이면 unknown을 반환합니다."""
+        number = get_active_caller_number()
+        return number if number and number.lower() not in {"anonymous", "unknown", ""} else "unknown"
 
     return agent
