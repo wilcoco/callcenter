@@ -40,6 +40,25 @@ def test_ticket_status_change():
     assert client.get(f"/tickets/{tid}").json()["status"] == "done"
 
 
+def test_ticket_team_reassignment():
+    _make_call_with_ticket("CA_UI_TEAM")
+    tid = client.get("/tickets").json()[0]["id"]
+
+    r = client.post(f"/ui/tickets/{tid}/team", data={"team_key": "design"}, follow_redirects=False)
+    assert r.status_code == 303
+
+    t = client.get(f"/tickets/{tid}").json()
+    assert t["team_key"] == "design"
+    assert t["team_name"] == "설계팀"
+
+
+def test_ticket_team_rejects_invalid():
+    _make_call_with_ticket("CA_UI_TEAM2")
+    tid = client.get("/tickets").json()[0]["id"]
+    r = client.post(f"/ui/tickets/{tid}/team", data={"team_key": "no-such-team"})
+    assert r.status_code == 400
+
+
 def test_ticket_status_rejects_invalid():
     _make_call_with_ticket("CA_UI_3")
     tid = client.get("/tickets").json()[0]["id"]

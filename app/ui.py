@@ -65,6 +65,8 @@ form.inline{display:inline}
 button.act{border:1px solid #ccc;background:#fff;border-radius:6px;padding:.25rem .6rem;
 cursor:pointer;font-size:.8rem;margin-right:.25rem}
 button.act:hover{background:#f3f4f6}
+select.team-select{border:1px solid #ccc;border-radius:6px;padding:.2rem .3rem;
+font-size:.8rem;max-width:130px;margin-right:.25rem}
 .empty{color:#888;padding:2rem;text-align:center}
 input[type=text],textarea{width:100%;border:1px solid #ccc;border-radius:6px;padding:.55rem .7rem;
 font-size:.95rem;font-family:inherit;background:#fff}
@@ -224,8 +226,19 @@ def tickets_page(
                 )
         return "".join(buttons)
 
+    def team_selector(t: Ticket) -> str:
+        options = "".join(
+            f'<option value="{tm.key}"{" selected" if tm.key == t.team_key else ""}>{_e(tm.name)}</option>'
+            for tm in teams
+        )
+        return (
+            f'<form class="inline" method="post" action="/ui/tickets/{t.id}/team">'
+            f'<select name="team_key" class="team-select">{options}</select>'
+            f'<button class="act">변경</button></form>'
+        )
+
     rows = "".join(
-        f"<tr><td>#{t.id}</td><td>{_e(t.team_name)}</td>"
+        f"<tr><td>#{t.id}</td><td>{_e(t.team_name)}<br>{team_selector(t)}</td>"
         f"<td>{_priority_badge(t.priority)}</td>"
         f'<td><a class="row-link" href="/ui/calls/{t.call_id}">{_e(t.title)}</a></td>'
         f"<td>{_status_badge(t.status)}</td><td>{_fmt_dt(t.created_at)}</td>"
@@ -236,9 +249,26 @@ def tickets_page(
     body = f"""
 <div class="filters">{team_filters}</div>
 <div class="filters">{status_filters}</div>
-<table><tr><th>번호</th><th>담당팀</th><th>우선순위</th><th>제목</th><th>상태</th><th>접수</th><th>상태 변경</th></tr>
+<table><tr><th>번호</th><th>담당팀 (변경 가능)</th><th>우선순위</th><th>제목</th><th>상태</th><th>접수</th><th>상태 변경</th></tr>
 {rows}</table>"""
     return _page("티켓", body, "tickets")
+
+
+@router.post("/ui/tickets/{ticket_id}/team")
+def change_ticket_team(
+    ticket_id: int, team_key: str = Form(...), db: Session = Depends(get_db)
+):
+    """관리자가 자동 배정된 팀을 다른 팀으로 재배정."""
+    team = db.query(Team).filter_by(key=team_key).one_or_none()
+    if team is None:
+        raise HTTPException(400, "invalid team")
+    ticket = db.get(Ticket, ticket_id)
+    if not ticket:
+        raise HTTPException(404, "ticket not found")
+    ticket.team_key = team.key
+    ticket.team_name = team.name
+    db.flush()
+    return RedirectResponse("/ui/tickets", status_code=303)
 
 
 @router.post("/ui/tickets/{ticket_id}/status")

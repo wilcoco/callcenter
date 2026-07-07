@@ -6,10 +6,9 @@ from twilio.twiml.voice_response import Gather, VoiceResponse
 from .config import get_settings
 
 GREETING = (
-    "주식회사 캠스 안내전화입니다. 구성원의 경우 담당팀이나 담당 임원을 지정하여 "
-    "관련 내용을 남겨 주세요. 빠르게 회신하겠습니다."
+    "주식회사 캠스 안내전화입니다. 용건을 말씀해 주시면 확인 후 관련 팀에 배정해 드리겠습니다."
 )
-GOODBYE = "말씀하신 내용은 담당 팀에 전달하겠습니다. 빠르게 회신드리겠습니다. 감사합니다."
+GOODBYE = "말씀하신 내용은 관련 팀에 배정해서 빠르게 회신드리겠습니다. 감사합니다."
 NO_INPUT = "죄송합니다, 잘 못 들었어요. 다시 말씀해 주시겠어요?"
 
 
@@ -46,7 +45,7 @@ def say_and_hangup(message: str) -> str:
 
 VOICEMAIL_GREETING = (
     "주식회사 캠스 안내전화입니다. 지금은 상담 연결이 어렵습니다. "
-    "삐 소리 후 전달할 팀과 용건을 남겨 주시면 확인 후 회신드리겠습니다."
+    "삐 소리 후 용건을 남겨 주시면 확인 후 관련 팀에 배정해 회신드리겠습니다."
 )
 
 
