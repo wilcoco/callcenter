@@ -42,3 +42,23 @@ def say_and_hangup(message: str) -> str:
     resp.say(message, **_say_kwargs())
     resp.hangup()
     return str(resp)
+
+
+VOICEMAIL_GREETING = (
+    "주식회사 캠스 안내전화입니다. 지금은 상담 연결이 어렵습니다. "
+    "삐 소리 후 전달할 팀과 용건을 남겨 주시면 확인 후 회신드리겠습니다."
+)
+
+
+def voicemail_response(max_length: int = 180) -> str:
+    """Agent 미접속 시 fallback용 보이스메일 TwiML.
+
+    음성 지정 없이 language만 사용 — ClawOps 호환을 위해 최소 태그로 구성.
+    """
+    s = get_settings()
+    resp = VoiceResponse()
+    resp.say(VOICEMAIL_GREETING, language=s.voice_language)
+    resp.record(max_length=max_length, play_beep=True, timeout=5)
+    resp.say("감사합니다. 확인 후 회신드리겠습니다.", language=s.voice_language)
+    resp.hangup()
+    return str(resp)

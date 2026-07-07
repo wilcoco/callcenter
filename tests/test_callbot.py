@@ -94,6 +94,64 @@ def test_clawops_webhook_json_event_finalizes():
     assert call.ticket.team_key == "material"  # 자재/입고 → 자재관리팀
 
 
+def test_voicemail_fallback_returns_twiml():
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    client = TestClient(app)
+    r = client.post(
+        "/clawops/voice",
+        data={"CallId": "CO_VM_1", "From": "+8210", "To": "07052753895"},
+    )
+    assert r.status_code == 200
+    assert "xml" in r.headers["content-type"]
+    assert "<Record" in r.text
+    assert "캠스" in r.text
+    # 통화 레코드가 미리 생성됨
+    call = _get_call("CO_VM_1")
+    assert call is not None
+
+
+def test_voicemail_transcript_webhook_creates_ticket():
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    client = TestClient(app)
+    cid = "CO_VM_2"
+    client.post("/clawops/voice", data={"CallId": cid, "From": "+8210"})
+    # 녹음 전사 완료 이벤트 (segments 포함)
+    r = client.post(
+        "/clawops/webhook",
+        json={
+            "event": "transcript.completed",
+            "data": {
+                "call_id": cid,
+                "segments": [
+                    {"speaker": "AGENT", "start": 0, "end": 3, "text": "삐 소리 후 남겨주세요"},
+                    {"speaker": "CUSTOMER", "start": 4, "end": 9,
+                     "text": "설계팀에 전달해주세요. 도면 검토 요청입니다"},
+                ],
+            },
+        },
+    )
+    assert r.status_code == 200
+    call = _get_call(cid)
+    assert "도면 검토" in call.transcript_text()
+    assert call.ticket is not None
+    assert call.ticket.team_key == "design"  # 설계팀 직접 지정
+
+
+def test_ingest_skips_when_live_messages_exist():
+    cid = "CO_VM_3"
+    callbot.record_call_start(cid, "0701", "0702")
+    callbot.record_transcript(cid, "user", "실시간으로 기록된 발화")
+    stored = callbot.ingest_transcript_segments(
+        cid, [{"speaker": "CUSTOMER", "text": "전사 중복 저장되면 안 됨"}]
+    )
+    assert stored is False
+    assert "전사 중복" not in _get_call(cid).transcript_text()
+
+
 def test_clawops_webhook_signature_rejected(monkeypatch):
     from fastapi.testclient import TestClient
     from app.main import app

@@ -144,6 +144,32 @@ async def voice_status(
 
 
 # ---------------------------------------------------------------------------
+# ClawOps 인바운드 fallback — Agent 미접속 시 보이스메일 접수
+# ---------------------------------------------------------------------------
+@app.api_route("/clawops/voice", methods=["GET", "POST"])
+async def clawops_voice_fallback(request: Request):
+    """전화번호 '인바운드 라우팅(WEBHOOK)'에 등록하는 URL.
+
+    Agent(음성봇)가 미접속일 때 걸려온 전화에 보이스메일 안내 TwiML을
+    돌려준다. 녹음이 끝나면 transcript.completed webhook이 도착해
+    전사 → 분석 → 팀 배정 티켓까지 이어진다.
+    """
+    params = dict(request.query_params)
+    if request.method == "POST":
+        try:
+            params.update({k: str(v) for k, v in (await request.form()).items()})
+        except Exception:
+            pass
+    call_id = params.get("CallId") or params.get("CallSid") or params.get("call_id") or ""
+    if call_id:
+        callbot.record_call_start(
+            str(call_id), params.get("From", ""), params.get("To", "")
+        )
+    log.info("ClawOps fallback 보이스메일 응답 (call=%s)", call_id or "unknown")
+    return Response(content=twiml.voicemail_response(), media_type="application/xml")
+
+
+# ---------------------------------------------------------------------------
 # ClawOps webhook (선택) — 통화 상태 이벤트 안전장치
 # ---------------------------------------------------------------------------
 @app.post("/clawops/webhook")
@@ -194,6 +220,21 @@ async def clawops_webhook(request: Request):
     call_id = _find(("call_id", "callId", "CallId"))
     status = _find(("CallStatus", "status")).lower()
     log.info("ClawOps webhook: event=%s call=%s status=%s", event, call_id, status)
+
+    # 전사 완료 이벤트: 실시간 기록이 없는 통화(보이스메일 등)는
+    # 전사 내용을 가져와 저장한 뒤 분석한다.
+    if call_id and event == "transcript.completed":
+        segments = None
+        for source in (payload, payload.get("data"), payload.get("payload")):
+            if isinstance(source, dict) and isinstance(source.get("segments"), list):
+                segments = source["segments"]
+                break
+        if segments is None:
+            from fastapi.concurrency import run_in_threadpool
+
+            segments = await run_in_threadpool(callbot.fetch_transcript_segments, call_id)
+        if segments:
+            callbot.ingest_transcript_segments(call_id, segments)
 
     # 통화가 끝났음을 뜻하는 신호면 분석·티켓 생성을 보장 (멱등)
     call_done = (

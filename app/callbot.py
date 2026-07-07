@@ -77,6 +77,49 @@ def record_transcript(call_id: str, role: str, text: str) -> None:
         services.add_message(db, call, mapped, text.strip())
 
 
+def ingest_transcript_segments(
+    call_id: str, segments: list[dict], from_number: str = "", to_number: str = ""
+) -> bool:
+    """서버 전사(segments)를 통화 기록으로 저장.
+
+    보이스메일(fallback)로 남긴 통화처럼 실시간 기록이 없는 경우에 사용.
+    이미 대화가 기록된 통화면 중복 저장하지 않는다.
+    segments: [{"speaker": "CUSTOMER"|"AGENT", "text": "..."}]
+    반환: 새로 저장했으면 True.
+    """
+    with session_scope() as db:
+        call = services.get_or_create_call(db, call_id, from_number=from_number, to_number=to_number)
+        if call.messages:
+            return False
+        stored = False
+        for seg in segments:
+            text = str(seg.get("text") or "").strip()
+            if not text:
+                continue
+            role = "caller" if str(seg.get("speaker", "CUSTOMER")).upper() == "CUSTOMER" else "agent"
+            services.add_message(db, call, role, text)
+            stored = True
+        return stored
+
+
+def fetch_transcript_segments(call_id: str) -> list[dict]:
+    """ClawOps API에서 통화 전사를 조회. 실패/미완료 시 빈 리스트."""
+    s = get_settings()
+    if not (s.clawops_api_key and s.clawops_account_id):
+        return []
+    try:
+        from clawops import ClawOps
+
+        client = ClawOps(api_key=s.clawops_api_key, account_id=s.clawops_account_id)
+        ts = client.calls.get_transcript(call_id)
+        if ts.status == "completed" and ts.segments:
+            return [{"speaker": seg.speaker, "text": seg.text} for seg in ts.segments]
+        log.info("전사 미완료(call=%s, status=%s)", call_id, ts.status)
+    except Exception as exc:
+        log.warning("전사 조회 실패(call=%s): %s", call_id, exc)
+    return []
+
+
 def record_call_end(call_id: str) -> None:
     """통화 종료 → 분석 + 팀 배정 + 티켓 생성 (멱등)."""
     with session_scope() as db:
