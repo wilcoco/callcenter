@@ -72,6 +72,9 @@ def finalize_call(db: Session, call: Call) -> Ticket | None:
         team_name=team_name,
         title=analysis["title"],
         summary=analysis["summary"],
+        caller_name=analysis.get("caller_name", ""),
+        # 통화 중 연락처를 안 남겼으면 발신번호로 회신
+        callback=analysis.get("callback", "") or call.from_number,
         priority=analysis["priority"],
         status="open",
     )

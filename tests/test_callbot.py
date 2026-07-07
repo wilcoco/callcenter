@@ -56,6 +56,27 @@ def test_voice_prompt_contains_teams_and_knowledge():
     assert "양산품질팀" in prompt
     assert "hang_up" in prompt
     assert "회사_지식_문서" in prompt  # 저장소 기본 knowledge/ 문서 포함
+    assert "연락처" in prompt  # 회신 연락처 수집 지침
+    assert "누구신지" in prompt  # 문의자 확인 지침
+    assert "주식회사 캠스입니다" in prompt  # 내외부 공용 인사말
+
+
+def test_ticket_stores_callback_from_transcript():
+    cid = "CO_CONTACT_1"
+    callbot.record_call_start(cid, "07011110000", "0705")
+    callbot.record_transcript(cid, "user", "부품 견적 문의드립니다. 제 번호는 010-1234-5678 입니다")
+    callbot.record_call_end(cid)
+    call = _get_call(cid)
+    assert call.ticket.callback == "01012345678"  # 정규화된 번호
+
+
+def test_ticket_falls_back_to_caller_id():
+    cid = "CO_CONTACT_2"
+    callbot.record_call_start(cid, "07099998888", "0705")
+    callbot.record_transcript(cid, "user", "자재 입고 일정 확인 부탁드립니다")
+    callbot.record_call_end(cid)
+    call = _get_call(cid)
+    assert call.ticket.callback == "07099998888"  # 발신번호로 대체
 
 
 def test_clawops_webhook_finalizes_missed_call():

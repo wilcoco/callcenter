@@ -36,12 +36,35 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False
 
 
 def init_db() -> None:
-    """테이블 생성 + 기본 팀 시드."""
+    """테이블 생성 + 경량 마이그레이션 + 기본 팀 시드."""
     from . import models  # noqa: F401  (모델 등록)
 
     Base.metadata.create_all(bind=engine)
+    _ensure_columns()
     with session_scope() as db:
         models.seed_default_teams(db)
+
+
+def _ensure_columns() -> None:
+    """create_all은 기존 테이블에 컬럼을 추가하지 않으므로,
+    새로 추가된 컬럼을 ALTER TABLE로 보강한다 (SQLite/Postgres 공통)."""
+    from sqlalchemy import inspect, text
+
+    required = {
+        "tickets": {
+            "caller_name": "VARCHAR(128) DEFAULT ''",
+            "callback": "VARCHAR(64) DEFAULT ''",
+        },
+    }
+    inspector = inspect(engine)
+    with engine.begin() as conn:
+        for table, columns in required.items():
+            if table not in inspector.get_table_names():
+                continue
+            existing = {c["name"] for c in inspector.get_columns(table)}
+            for name, ddl in columns.items():
+                if name not in existing:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
 
 
 @contextmanager

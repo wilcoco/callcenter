@@ -257,6 +257,8 @@ def _ticket_dict(t: Ticket) -> dict:
         "team_name": t.team_name,
         "title": t.title,
         "summary": t.summary,
+        "caller_name": t.caller_name,
+        "callback": t.callback,
         "priority": t.priority,
         "status": t.status,
         "created_at": t.created_at.isoformat() if t.created_at else None,

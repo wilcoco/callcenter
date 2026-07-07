@@ -67,6 +67,7 @@ cursor:pointer;font-size:.8rem;margin-right:.25rem}
 button.act:hover{background:#f3f4f6}
 select.team-select{border:1px solid #ccc;border-radius:6px;padding:.2rem .3rem;
 font-size:.8rem;max-width:130px;margin-right:.25rem}
+.sub-text{color:#666;font-size:.83rem}
 .empty{color:#888;padding:2rem;text-align:center}
 input[type=text],textarea{width:100%;border:1px solid #ccc;border-radius:6px;padding:.55rem .7rem;
 font-size:.95rem;font-family:inherit;background:#fff}
@@ -237,19 +238,28 @@ def tickets_page(
             f'<button class="act">변경</button></form>'
         )
 
+    def contact_cell(t: Ticket) -> str:
+        parts = []
+        if t.caller_name:
+            parts.append(_e(t.caller_name))
+        if t.callback:
+            parts.append(f'<span class="sub-text">{_e(t.callback)}</span>')
+        return "<br>".join(parts) or "-"
+
     rows = "".join(
         f"<tr><td>#{t.id}</td><td>{_e(t.team_name)}<br>{team_selector(t)}</td>"
+        f"<td>{contact_cell(t)}</td>"
         f"<td>{_priority_badge(t.priority)}</td>"
         f'<td><a class="row-link" href="/ui/calls/{t.call_id}">{_e(t.title)}</a></td>'
         f"<td>{_status_badge(t.status)}</td><td>{_fmt_dt(t.created_at)}</td>"
         f"<td>{actions(t)}</td></tr>"
         for t in tickets
-    ) or '<tr><td colspan="7" class="empty">조건에 맞는 티켓이 없습니다.</td></tr>'
+    ) or '<tr><td colspan="8" class="empty">조건에 맞는 티켓이 없습니다.</td></tr>'
 
     body = f"""
 <div class="filters">{team_filters}</div>
 <div class="filters">{status_filters}</div>
-<table><tr><th>번호</th><th>담당팀 (변경 가능)</th><th>우선순위</th><th>제목</th><th>상태</th><th>접수</th><th>상태 변경</th></tr>
+<table><tr><th>번호</th><th>담당팀 (변경 가능)</th><th>문의자/연락처</th><th>우선순위</th><th>제목</th><th>상태</th><th>접수</th><th>상태 변경</th></tr>
 {rows}</table>"""
     return _page("티켓", body, "tickets")
 
@@ -415,6 +425,8 @@ def call_detail_page(call_id: int, db: Session = Depends(get_db)):
 <div class="detail"><strong>🎫 배정된 티켓 #{t.id}</strong>
 <dl>
 <dt>담당팀</dt><dd>{_e(t.team_name)} {_priority_badge(t.priority)} {_status_badge(t.status)}</dd>
+<dt>문의자</dt><dd>{_e(t.caller_name or '-')}</dd>
+<dt>회신 연락처</dt><dd>{_e(t.callback or '-')}</dd>
 <dt>제목</dt><dd>{_e(t.title)}</dd>
 <dt>요약</dt><dd>{_e(t.summary)}</dd>
 </dl></div>"""

@@ -226,6 +226,8 @@ class Ticket(Base):
     team_name: Mapped[str] = mapped_column(String(128))
     title: Mapped[str] = mapped_column(String(255))
     summary: Mapped[str] = mapped_column(Text, default="")
+    caller_name: Mapped[str] = mapped_column(String(128), default="")  # 문의자 (소속/이름)
+    callback: Mapped[str] = mapped_column(String(64), default="")  # 회신 연락처
     priority: Mapped[str] = mapped_column(String(16), default="normal")  # low|normal|high|urgent
     status: Mapped[str] = mapped_column(String(16), default="open")
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=_utcnow)
