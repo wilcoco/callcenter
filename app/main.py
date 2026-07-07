@@ -26,7 +26,11 @@ async def lifespan(app: FastAPI):
         try:
             agent = callbot.build_agent()
             await agent.connect()
-            log.info("ClawOps 음성봇 연결됨 (번호: %s)", get_settings().clawops_from_number)
+            log.info(
+                "ClawOps 음성봇 연결됨 (번호: %s, 음성세션: %s)",
+                get_settings().clawops_from_number,
+                callbot.pick_session_type(),
+            )
         except Exception:
             log.exception("ClawOps 음성봇 연결 실패 — 웹/티켓 기능은 정상 동작합니다")
             agent = None

@@ -204,6 +204,15 @@ def _build_session():
 
     from clawops.agent.pipeline import AnthropicLLM, DeepgramSTT, ElevenLabsTTS, PipelineSession
 
+    import os as _os
+
+    if not _os.environ.get("DEEPGRAM_API_KEY") or not _os.environ.get("ELEVENLABS_API_KEY"):
+        log.error(
+            "파이프라인 음성 세션이 선택됐지만 DEEPGRAM_API_KEY/ELEVENLABS_API_KEY가 "
+            "없습니다. 이 상태에서는 전화가 오면 통화 연결이 거부되어 보이스메일로 "
+            "넘어갑니다. OPENAI_API_KEY를 설정하면 키 1개로 Realtime 모드로 동작합니다."
+        )
+
     return PipelineSession(
         stt=DeepgramSTT(model=s.deepgram_model, language="ko"),
         llm=AnthropicLLM(model=s.reply_model, temperature=0.6, max_tokens=1024),
