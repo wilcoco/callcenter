@@ -24,6 +24,39 @@ log = logging.getLogger("callcenter.callbot")
 _TEAM_LINES = "\n".join(f"- {t['name']}: {t['description']}" for t in DEFAULT_TEAMS)
 
 
+def _glossary_block() -> str:
+    """음성 인식 교정용 회사 고유명사 목록.
+
+    팀/임원 이름은 자동 포함하고, knowledge에 '용어집' 문서가 있으면 그 내용도 넣는다.
+    발음이 비슷하게 잘못 들려도 이 목록의 단어로 해석하도록 모델에 지시한다.
+    """
+    team_names = ", ".join(t["name"] for t in DEFAULT_TEAMS)
+
+    # knowledge 문서 중 제목에 '용어'가 들어간 것을 용어집으로 사용
+    extra = ""
+    try:
+        from .database import session_scope
+        from .models import KnowledgeDoc
+
+        with session_scope() as db:
+            docs = db.query(KnowledgeDoc).filter(KnowledgeDoc.title.like("%용어%")).all()
+            extra = "\n".join((d.content or "").strip() for d in docs if (d.content or "").strip())
+    except Exception:  # pragma: no cover
+        pass
+
+    body = f"부서/직책 이름: {team_names}"
+    if extra:
+        body += f"\n{extra}"
+
+    return f"""
+
+[회사 고유명사 — 음성 인식 교정용]
+아래는 이 회사에서 자주 쓰는 고유명사입니다. 고객 발화가 발음이 비슷한 다른 단어로
+들리더라도(예: '생산기술팀'을 '정수기술팀'으로, '1호기'를 '일오기'로), 문맥상 아래
+목록의 단어일 가능성이 높으면 그 단어로 해석하고, 애매하면 되물어 확인하세요.
+{body}"""
+
+
 def build_voice_system_prompt() -> str:
     """실시간 음성 대화용 시스템 프롬프트 (지식 문서 포함)."""
     return f"""당신은 주식회사 캠스의 안내전화 AI 상담원입니다. 지금 전화 건 사람과 실제 음성 통화 중입니다.
@@ -68,7 +101,7 @@ def build_voice_system_prompt() -> str:
 - 고객이 끊겠다고 하거나 더 없다고 하면 짧게 감사 인사 후 hang_up 하세요.
 
 담당 부서(참고용 — 고객에게 나열하지 말 것):
-{_TEAM_LINES}{llm_mod._knowledge_block()}"""
+{_TEAM_LINES}{_glossary_block()}{llm_mod._knowledge_block()}"""
 
 
 # ---------------------------------------------------------------------------

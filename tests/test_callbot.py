@@ -201,6 +201,14 @@ def test_voice_prompt_mentions_caller_number_tool():
     assert "이 번호로 회신드리면 될까요" in prompt
 
 
+def test_voice_prompt_contains_glossary():
+    prompt = callbot.build_voice_system_prompt()
+    assert "음성 인식 교정용" in prompt
+    assert "생산기술팀" in prompt  # 팀 이름이 고유명사 목록에 포함
+    # knowledge/용어집.md 내용도 반영
+    assert "사출기" in prompt or "1호기" in prompt
+
+
 def test_session_type_selection(monkeypatch):
     s = get_settings()
     monkeypatch.setattr(s, "clawops_session", "")
