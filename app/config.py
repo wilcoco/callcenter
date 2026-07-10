@@ -37,6 +37,14 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./data/callcenter.db"
     knowledge_file: str = "./knowledge.md"
     knowledge_dir: str = "./knowledge"
+    # 회사 업종/사업 맥락 — 음성 인식·용건 이해에 활용
+    company_context: str = (
+        "주식회사 캠스는 자동차 부품 제조업체로, 플라스틱 사출(injection), 도장(painting), "
+        "조립(assembly) 공정을 운영합니다. 주로 자동차 범퍼·크래시패드 등 외장/내장 부품을 "
+        "생산합니다. 따라서 전화 문의에는 사출기, 금형, 도장 라인, 조립 라인, 컨베이어, "
+        "설비 번호(1호기·2호기 등), 불량·품질, 자재·부품 납기, 협력사, 수주·견적 같은 "
+        "제조 현장 용어가 자주 등장합니다."
+    )
     public_base_url: str = ""
     max_turns: int = 8
 

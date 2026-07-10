@@ -209,6 +209,12 @@ def test_voice_prompt_contains_glossary():
     assert "사출기" in prompt or "1호기" in prompt
 
 
+def test_voice_prompt_contains_company_context():
+    prompt = callbot.build_voice_system_prompt()
+    assert "회사 소개" in prompt
+    assert "사출" in prompt and "도장" in prompt and "조립" in prompt
+
+
 def test_session_type_selection(monkeypatch):
     s = get_settings()
     monkeypatch.setattr(s, "clawops_session", "")

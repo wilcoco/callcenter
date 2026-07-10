@@ -122,8 +122,14 @@ def _reply_system() -> str:
 반드시 아래 JSON만 출력하세요:
 {{"reply": "<고객에게 말할 문장>", "should_end": <true|false>}}"""
 
+def _company_context() -> str:
+    ctx = get_settings().company_context.strip()
+    return f"\n회사 소개(맥락): {ctx}\n" if ctx else ""
+
+
 _ANALYZE_SYSTEM = f"""당신은 회사 대표번호 통화 기록 분석가입니다.
 주어진 통화 전문을 읽고, 담당 팀 배정과 업무 요약을 작성하세요.
+{_company_context()}
 
 가능한 팀(key):
 {_TEAM_LINES}

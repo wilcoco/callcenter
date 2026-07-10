@@ -57,10 +57,22 @@ def _glossary_block() -> str:
 {body}"""
 
 
+def _company_context_block() -> str:
+    ctx = get_settings().company_context.strip()
+    if not ctx:
+        return ""
+    return f"""
+
+[회사 소개 — 대화 맥락]
+{ctx}
+전화 건 분의 발화를 이 업종 맥락에서 이해하세요. 발음이 불분명해도 제조 현장에서
+쓰일 법한 단어를 우선 고려하고, 일상 단어로 잘못 해석하지 마세요."""
+
+
 def build_voice_system_prompt() -> str:
     """실시간 음성 대화용 시스템 프롬프트 (지식 문서 포함)."""
     return f"""당신은 주식회사 캠스의 안내전화 AI 상담원입니다. 지금 전화 건 사람과 실제 음성 통화 중입니다.
-
+{_company_context_block()}
 역할:
 - 회사 대표 안내전화 AI입니다. 전화 건 분은 회사 구성원일 수도, 고객·협력사 등 외부인일 수도 있습니다.
 - 문의 내용을 잘 듣고 정리해서 담당자가 회신할 수 있게 하는 것이 목표입니다.
