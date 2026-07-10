@@ -32,19 +32,29 @@ def _glossary_block() -> str:
     """
     team_names = ", ".join(t["name"] for t in DEFAULT_TEAMS)
 
-    # knowledge 문서 중 제목에 '용어'가 들어간 것을 용어집으로 사용
+    term_lines: list[str] = []
     extra = ""
     try:
         from .database import session_scope
-        from .models import KnowledgeDoc
+        from .models import GlossaryTerm, KnowledgeDoc
 
         with session_scope() as db:
+            # 웹 "용어 사전" 메뉴에서 등록한 단어
+            for t in db.query(GlossaryTerm).order_by(GlossaryTerm.term).all():
+                term = (t.term or "").strip()
+                if not term:
+                    continue
+                aliases = (t.aliases or "").strip()
+                term_lines.append(f"{term} (유사발음: {aliases})" if aliases else term)
+            # (하위호환) 제목에 '용어'가 든 지식 문서도 포함
             docs = db.query(KnowledgeDoc).filter(KnowledgeDoc.title.like("%용어%")).all()
             extra = "\n".join((d.content or "").strip() for d in docs if (d.content or "").strip())
     except Exception:  # pragma: no cover
         pass
 
     body = f"부서/직책 이름: {team_names}"
+    if term_lines:
+        body += "\n주요 단어: " + ", ".join(term_lines)
     if extra:
         body += f"\n{extra}"
 

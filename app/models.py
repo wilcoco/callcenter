@@ -235,6 +235,23 @@ class Ticket(Base):
     call: Mapped["Call"] = relationship(back_populates="ticket")
 
 
+class GlossaryTerm(Base):
+    """음성 인식 교정용 주요 단어 (설비명·제품명·약칭 등).
+
+    term: 표준 단어 (예: 생산기술팀, 1호기, 사출기)
+    aliases: 잘못 들리기 쉬운 발음/유사어 (쉼표 구분, 선택)
+    note: 관리자용 메모 (선택)
+    """
+
+    __tablename__ = "glossary_terms"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    term: Mapped[str] = mapped_column(String(128), index=True)
+    aliases: Mapped[str] = mapped_column(String(255), default="")
+    note: Mapped[str] = mapped_column(String(255), default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=_utcnow)
+
+
 class KnowledgeDoc(Base):
     """웹 화면에서 등록하는 회사 지식 문서 (규정/FAQ 등).
 

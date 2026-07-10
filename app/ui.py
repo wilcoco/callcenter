@@ -10,7 +10,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .database import get_db
-from .models import Call, KnowledgeDoc, Team, Ticket
+from .models import Call, GlossaryTerm, KnowledgeDoc, Team, Ticket
 
 router = APIRouter()
 
@@ -68,6 +68,9 @@ button.act:hover{background:#f3f4f6}
 select.team-select{border:1px solid #ccc;border-radius:6px;padding:.2rem .3rem;
 font-size:.8rem;max-width:130px;margin-right:.25rem}
 .sub-text{color:#666;font-size:.83rem}
+.glossary-add{background:#fff;border-radius:8px;padding:1rem 1.2rem;margin-bottom:1.2rem;
+box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.g-row{display:flex;gap:1rem;flex-wrap:wrap}.g-row>div{flex:1;min-width:200px}
 .empty{color:#888;padding:2rem;text-align:center}
 input[type=text],textarea{width:100%;border:1px solid #ccc;border-radius:6px;padding:.55rem .7rem;
 font-size:.95rem;font-family:inherit;background:#fff}
@@ -118,6 +121,7 @@ def _page(title: str, body: str, active: str) -> str:
 <a href="/ui/tickets"{nav_cls('tickets')}>티켓</a>
 <a href="/ui/calls"{nav_cls('calls')}>통화 기록</a>
 <a href="/ui/knowledge"{nav_cls('knowledge')}>지식 문서</a>
+<a href="/ui/glossary"{nav_cls('glossary')}>용어 사전</a>
 </nav><main><h1>{_e(title)}</h1>{body}</main></body></html>"""
 
 
@@ -378,6 +382,59 @@ def knowledge_delete(doc_id: int, db: Session = Depends(get_db)):
         db.delete(doc)
         db.flush()
     return RedirectResponse("/ui/knowledge", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# 용어 사전 (음성 인식 교정용 주요 단어)
+# ---------------------------------------------------------------------------
+@router.get("/ui/glossary", response_class=HTMLResponse)
+def glossary_page(db: Session = Depends(get_db)):
+    terms = db.query(GlossaryTerm).order_by(GlossaryTerm.term).all()
+    rows = "".join(
+        f"<tr><td><strong>{_e(t.term)}</strong></td>"
+        f'<td>{_e(t.aliases) or "-"}</td><td>{_e(t.note) or "-"}</td>'
+        f'<td><form class="inline" method="post" action="/ui/glossary/{t.id}/delete" '
+        f"onsubmit=\"return confirm('『{_e(t.term)}』 삭제할까요?')\">"
+        f'<button class="danger">삭제</button></form></td></tr>'
+        for t in terms
+    ) or '<tr><td colspan="4" class="empty">등록된 단어가 없습니다. 설비명·제품명·약칭 등을 등록하세요.</td></tr>'
+
+    body = f"""
+<p class="hint">전화 음성에서 자주 나오는 회사 고유 단어(설비명, 제품명, 부서 약칭, 거래처 등)를
+등록하면 AI가 비슷한 발음을 이 단어로 알아듣습니다. 등록 즉시 다음 통화부터 반영됩니다.</p>
+<form method="post" action="/ui/glossary" class="glossary-add">
+<div class="g-row">
+<div><label>단어 *</label><input type="text" name="term" required placeholder="예: 생산기술팀 / 1호기 / 사출기"></div>
+<div><label>비슷하게 들리는 발음 (선택, 쉼표로 구분)</label><input type="text" name="aliases" placeholder="예: 정수기술팀, 생기팀"></div>
+<div><label>메모 (선택)</label><input type="text" name="note" placeholder="예: 조립 2라인 설비"></div>
+</div>
+<button class="primary">단어 추가</button>
+</form>
+<table><tr><th>단어</th><th>비슷한 발음</th><th>메모</th><th></th></tr>{rows}</table>"""
+    return _page("용어 사전", body, "glossary")
+
+
+@router.post("/ui/glossary")
+def glossary_create(
+    term: str = Form(...),
+    aliases: str = Form(""),
+    note: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    term = term.strip()
+    if term:
+        db.add(GlossaryTerm(term=term, aliases=aliases.strip(), note=note.strip()))
+        db.flush()
+    return RedirectResponse("/ui/glossary", status_code=303)
+
+
+@router.post("/ui/glossary/{term_id}/delete")
+def glossary_delete(term_id: int, db: Session = Depends(get_db)):
+    t = db.get(GlossaryTerm, term_id)
+    if t:
+        db.delete(t)
+        db.flush()
+    return RedirectResponse("/ui/glossary", status_code=303)
 
 
 # ---------------------------------------------------------------------------
