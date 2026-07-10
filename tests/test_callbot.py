@@ -215,6 +215,24 @@ def test_voice_prompt_contains_company_context():
     assert "사출" in prompt and "도장" in prompt and "조립" in prompt
 
 
+def test_voice_prompt_requires_final_confirmation():
+    prompt = callbot.build_voice_system_prompt()
+    assert "맞으실까요" in prompt
+    assert "정정" in prompt or "고치" in prompt
+    assert "확인한 뒤에만" in prompt or "맞다고 할 때까지" in prompt
+
+
+def test_default_glossary_seeded():
+    # init_db가 기본 용어를 시드했는지 (conftest에서 init_db 실행됨)
+    from app.database import session_scope
+    from app.models import GlossaryTerm
+
+    with session_scope() as db:
+        terms = {t.term for t in db.query(GlossaryTerm).all()}
+    assert "1호기" in terms
+    assert "생산기술팀" in terms
+
+
 def test_session_type_selection(monkeypatch):
     s = get_settings()
     monkeypatch.setattr(s, "clawops_session", "")

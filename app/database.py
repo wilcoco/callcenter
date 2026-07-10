@@ -43,6 +43,7 @@ def init_db() -> None:
     _ensure_columns()
     with session_scope() as db:
         models.seed_default_teams(db)
+        models.seed_default_glossary(db)
 
 
 def _ensure_columns() -> None:
