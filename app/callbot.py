@@ -67,22 +67,31 @@ def _glossary_block() -> str:
 {body}"""
 
 
-def _company_context_block() -> str:
-    ctx = get_settings().company_context.strip()
+DEFAULT_GREETING = (
+    "안녕하세요, 주식회사 캠스입니다. 문의하실 내용을 말씀해 주시면 확인 후 회신드리겠습니다."
+)
+
+
+def _company_context_block(context: str | None = None) -> str:
+    ctx = (context if context is not None else get_settings().company_context).strip()
     if not ctx:
         return ""
     return f"""
 
 [회사 소개 — 대화 맥락]
 {ctx}
-전화 건 분의 발화를 이 업종 맥락에서 이해하세요. 발음이 불분명해도 제조 현장에서
-쓰일 법한 단어를 우선 고려하고, 일상 단어로 잘못 해석하지 마세요."""
+전화 건 분의 발화를 이 맥락에서 이해하세요. 발음이 불분명해도 이 맥락에서
+쓰일 법한 단어를 우선 고려하고, 엉뚱한 단어로 잘못 해석하지 마세요."""
 
 
-def build_voice_system_prompt() -> str:
-    """실시간 음성 대화용 시스템 프롬프트 (지식 문서 포함)."""
+def build_voice_system_prompt(greeting: str | None = None, context: str | None = None) -> str:
+    """실시간 음성 대화용 시스템 프롬프트 (지식 문서 포함).
+
+    greeting/context를 주면 회선(번호)별로 인사말·맥락을 바꿀 수 있다.
+    """
+    greeting = (greeting or "").strip() or DEFAULT_GREETING
     return f"""당신은 주식회사 캠스의 안내전화 AI 상담원입니다. 지금 전화 건 사람과 실제 음성 통화 중입니다.
-{_company_context_block()}
+{_company_context_block(context)}
 역할:
 - 회사 대표 안내전화 AI입니다. 전화 건 분은 회사 구성원일 수도, 고객·협력사 등 외부인일 수도 있습니다.
 - 문의 내용을 잘 듣고 정리해서 담당자가 회신할 수 있게 하는 것이 목표입니다.
@@ -120,7 +129,7 @@ def build_voice_system_prompt() -> str:
 
 말하기 규칙:
 - 한국어 존댓말. 음성으로 전달되므로 한 번에 1~2문장으로 짧게.
-- 통화 시작 시 정확히 이렇게 인사: "안녕하세요, 주식회사 캠스입니다. 문의하실 내용을 말씀해 주시면 확인 후 회신드리겠습니다."
+- 통화 시작 시 정확히 이렇게 인사: "{greeting}"
 - 한 번에 한 가지만 질문하고, 목록 나열이나 특수기호는 쓰지 마세요.
 - 숫자·전화번호는 또박또박 읽기 좋게 말하세요.
 - 자기 행동을 설명하지 마세요. "마무리 인사 드리겠습니다", "접수하겠습니다"처럼
@@ -260,9 +269,9 @@ def pick_session_type() -> str:
     return "pipeline"
 
 
-def _build_session():
+def _build_session(greeting: str | None = None, context: str | None = None):
     s = get_settings()
-    prompt = build_voice_system_prompt()
+    prompt = build_voice_system_prompt(greeting, context)
 
     if pick_session_type() == "realtime":
         from clawops.agent import OpenAIRealtime
@@ -297,18 +306,7 @@ def _build_session():
     )
 
 
-def build_agent():
-    """ClawOpsAgent 생성 (clawops_enabled() 확인 후 호출할 것)."""
-    from clawops.agent import ClawOpsAgent
-
-    s = get_settings()
-    agent = ClawOpsAgent(
-        api_key=s.clawops_api_key,
-        account_id=s.clawops_account_id,
-        from_=s.clawops_from_number,
-        session=_build_session(),
-    )
-
+def _attach_handlers(agent) -> None:
     @agent.on("call_start")
     async def _on_start(call):
         set_active_caller(call.call_id, call.from_number)
@@ -330,4 +328,51 @@ def build_agent():
         number = get_active_caller_number()
         return number if number and number.lower() not in {"anonymous", "unknown", ""} else "unknown"
 
+
+def _make_agent(number: str, greeting: str | None, context: str | None):
+    from clawops.agent import ClawOpsAgent
+
+    s = get_settings()
+    agent = ClawOpsAgent(
+        api_key=s.clawops_api_key,
+        account_id=s.clawops_account_id,
+        from_=number,
+        session=_build_session(greeting, context),
+    )
+    _attach_handlers(agent)
     return agent
+
+
+def active_line_profiles() -> list[dict]:
+    """DB의 활성 회선 목록. 없으면 환경변수 기본 번호 1개로 대체."""
+    s = get_settings()
+    try:
+        from .models import LineProfile
+
+        with session_scope() as db:
+            lines = [
+                {"number": p.number, "name": p.name, "greeting": p.greeting, "context": p.context}
+                for p in db.query(LineProfile).filter_by(active=True).order_by(LineProfile.id).all()
+                if p.number
+            ]
+        if lines:
+            return lines
+    except Exception as exc:  # pragma: no cover
+        log.warning("회선 프로필 조회 실패, 기본 번호 사용: %s", exc)
+    if s.clawops_from_number:
+        return [{"number": s.clawops_from_number, "name": "대표번호", "greeting": "", "context": ""}]
+    return []
+
+
+def build_agents() -> list:
+    """활성 회선마다 ClawOpsAgent를 생성해 리스트로 반환."""
+    agents = []
+    for line in active_line_profiles():
+        agents.append(_make_agent(line["number"], line["greeting"], line["context"]))
+    return agents
+
+
+def build_agent():
+    """단일 에이전트 (하위호환)."""
+    s = get_settings()
+    return _make_agent(s.clawops_from_number, None, None)

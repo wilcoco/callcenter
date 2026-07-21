@@ -21,24 +21,28 @@ log = logging.getLogger("callcenter")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    agent = None
+    agents = []
     if callbot.clawops_enabled():
-        try:
-            agent = callbot.build_agent()
-            await agent.connect()
-            log.info(
-                "ClawOps 음성봇 연결됨 (번호: %s, 음성세션: %s)",
-                get_settings().clawops_from_number,
-                callbot.pick_session_type(),
-            )
-        except Exception:
-            log.exception("ClawOps 음성봇 연결 실패 — 웹/티켓 기능은 정상 동작합니다")
-            agent = None
+        session_type = callbot.pick_session_type()
+        for line in callbot.active_line_profiles():
+            try:
+                agent = callbot._make_agent(line["number"], line["greeting"], line["context"])
+                await agent.connect()
+                agents.append(agent)
+                log.info(
+                    "ClawOps 음성봇 연결됨 (번호: %s [%s], 음성세션: %s)",
+                    line["number"], line.get("name", ""), session_type,
+                )
+            except Exception:
+                log.exception("ClawOps 음성봇 연결 실패 (번호: %s)", line["number"])
     else:
         log.info("ClawOps 미설정 — 음성봇 비활성 (CLAWOPS_API_KEY 등 필요)")
     yield
-    if agent is not None:
-        await agent.disconnect()
+    for agent in agents:
+        try:
+            await agent.disconnect()
+        except Exception:
+            pass
 
 
 app = FastAPI(title="캠스 콜센터 — 자동 응대·팀 배정", version="0.1.0", lifespan=lifespan)

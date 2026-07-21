@@ -44,6 +44,14 @@ def init_db() -> None:
     with session_scope() as db:
         models.seed_default_teams(db)
         models.seed_default_glossary(db)
+        # 현재 환경변수 번호를 기본 회선으로 시드 (회선이 하나도 없을 때만)
+        from .callbot import DEFAULT_GREETING
+        from .config import get_settings
+
+        s = get_settings()
+        models.seed_default_line(
+            db, s.clawops_from_number, DEFAULT_GREETING, s.company_context
+        )
 
 
 def _ensure_columns() -> None:

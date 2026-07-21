@@ -10,7 +10,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .database import get_db
-from .models import Call, GlossaryTerm, KnowledgeDoc, Team, Ticket
+from .models import Call, GlossaryTerm, KnowledgeDoc, LineProfile, Team, Ticket
 
 router = APIRouter()
 
@@ -122,6 +122,7 @@ def _page(title: str, body: str, active: str) -> str:
 <a href="/ui/calls"{nav_cls('calls')}>통화 기록</a>
 <a href="/ui/knowledge"{nav_cls('knowledge')}>지식 문서</a>
 <a href="/ui/glossary"{nav_cls('glossary')}>용어 사전</a>
+<a href="/ui/lines"{nav_cls('lines')}>전화 회선</a>
 </nav><main><h1>{_e(title)}</h1>{body}</main></body></html>"""
 
 
@@ -382,6 +383,116 @@ def knowledge_delete(doc_id: int, db: Session = Depends(get_db)):
         db.delete(doc)
         db.flush()
     return RedirectResponse("/ui/knowledge", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# 전화 회선 (번호별 인사말/용도)
+# ---------------------------------------------------------------------------
+@router.get("/ui/lines", response_class=HTMLResponse)
+def lines_page(db: Session = Depends(get_db)):
+    lines = db.query(LineProfile).order_by(LineProfile.id).all()
+    rows = "".join(
+        f"<tr><td><strong>{_e(l.number)}</strong></td><td>{_e(l.name) or '-'}</td>"
+        f"<td>{_e(l.greeting) or '(기본 인사말)'}</td>"
+        f'<td>{"🟢 사용" if l.active else "⚪ 중지"}</td>'
+        f'<td><a class="row-link" href="/ui/lines/{l.id}">수정</a> · '
+        f'<form class="inline" method="post" action="/ui/lines/{l.id}/delete" '
+        f"onsubmit=\"return confirm('{_e(l.number)} 회선을 삭제할까요?')\">"
+        f'<button class="danger">삭제</button></form></td></tr>'
+        for l in lines
+    ) or '<tr><td colspan="5" class="empty">등록된 회선이 없습니다.</td></tr>'
+
+    body = f"""
+<p class="hint">번호마다 인사말과 용도를 다르게 운영할 수 있습니다. 텍스트 기록·팀 배정·티켓
+기능은 모든 번호가 공유합니다. <strong>번호 추가/수정 후에는 Railway에서 재배포(Redeploy)해야
+음성봇에 반영됩니다.</strong> (번호는 ClawOps에서 먼저 발급되어 있어야 합니다.)</p>
+<a class="btn" href="/ui/lines/new">+ 새 회선 추가</a>
+<table><tr><th>번호</th><th>이름</th><th>인사말</th><th>상태</th><th></th></tr>{rows}</table>"""
+    return _page("전화 회선", body, "lines")
+
+
+def _line_form(action: str, l: LineProfile | None = None) -> str:
+    number = _e(l.number) if l else ""
+    name = _e(l.name) if l else ""
+    greeting = _e(l.greeting) if l else ""
+    context = _e(l.context) if l else ""
+    checked = "checked" if (l is None or l.active) else ""
+    return f"""
+<form method="post" action="{action}">
+<label>전화번호 * (ClawOps에서 발급된 번호, 예: 07052753895)</label>
+<input type="text" name="number" required value="{number}" placeholder="07052753895">
+<label>회선 이름 (관리용, 예: 대표번호 / 채용문의 / A/S접수)</label>
+<input type="text" name="name" value="{name}" placeholder="대표번호">
+<label>첫 인사말 (비우면 기본 인사말 사용)</label>
+<textarea name="greeting" style="min-height:90px" placeholder="안녕하세요, 주식회사 캠스 채용문의입니다. 지원 관련 문의를 남겨 주세요.">{greeting}</textarea>
+<label>이 번호 용도/맥락 (선택 — AI가 대화 맥락으로 참고)</label>
+<textarea name="context" style="min-height:90px" placeholder="예: 이 번호는 채용 지원자 문의 전용. 지원 절차, 서류, 면접 일정 관련 문의가 들어온다.">{context}</textarea>
+<label><input type="checkbox" name="active" value="1" {checked}> 사용 (체크 해제 시 이 번호는 연결 안 함)</label>
+<button class="primary">저장</button>
+</form>"""
+
+
+@router.get("/ui/lines/new", response_class=HTMLResponse)
+def line_new_page():
+    return _page("새 전화 회선", _line_form("/ui/lines"), "lines")
+
+
+@router.post("/ui/lines")
+def line_create(
+    number: str = Form(...),
+    name: str = Form(""),
+    greeting: str = Form(""),
+    context: str = Form(""),
+    active: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    number = number.strip()
+    if number and not db.query(LineProfile).filter_by(number=number).first():
+        db.add(LineProfile(
+            number=number, name=name.strip(), greeting=greeting.strip(),
+            context=context.strip(), active=bool(active),
+        ))
+        db.flush()
+    return RedirectResponse("/ui/lines", status_code=303)
+
+
+@router.get("/ui/lines/{line_id}", response_class=HTMLResponse)
+def line_edit_page(line_id: int, db: Session = Depends(get_db)):
+    l = db.get(LineProfile, line_id)
+    if not l:
+        raise HTTPException(404, "line not found")
+    return _page(f"회선 수정 — {l.number}", _line_form(f"/ui/lines/{l.id}", l), "lines")
+
+
+@router.post("/ui/lines/{line_id}")
+def line_update(
+    line_id: int,
+    number: str = Form(...),
+    name: str = Form(""),
+    greeting: str = Form(""),
+    context: str = Form(""),
+    active: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    l = db.get(LineProfile, line_id)
+    if not l:
+        raise HTTPException(404, "line not found")
+    l.number = number.strip() or l.number
+    l.name = name.strip()
+    l.greeting = greeting.strip()
+    l.context = context.strip()
+    l.active = bool(active)
+    db.flush()
+    return RedirectResponse("/ui/lines", status_code=303)
+
+
+@router.post("/ui/lines/{line_id}/delete")
+def line_delete(line_id: int, db: Session = Depends(get_db)):
+    l = db.get(LineProfile, line_id)
+    if l:
+        db.delete(l)
+        db.flush()
+    return RedirectResponse("/ui/lines", status_code=303)
 
 
 # ---------------------------------------------------------------------------

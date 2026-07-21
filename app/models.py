@@ -235,6 +235,42 @@ class Ticket(Base):
     call: Mapped["Call"] = relationship(back_populates="ticket")
 
 
+class LineProfile(Base):
+    """전화 회선(번호)별 프로필. 번호마다 인사말·용도를 다르게 운영.
+
+    기능(텍스트 기록·팀 배정·티켓)은 모든 번호가 공유하고,
+    인사말(greeting)과 맥락(context)만 번호별로 달라진다.
+    """
+
+    __tablename__ = "line_profiles"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    number: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(128), default="")  # 회선 이름(예: 대표번호, 채용문의)
+    greeting: Mapped[str] = mapped_column(Text, default="")  # 첫 인사말
+    context: Mapped[str] = mapped_column(Text, default="")  # 이 번호 용도/맥락 (비우면 기본값)
+    active: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=_utcnow)
+
+
+def seed_default_line(db: Session, number: str, greeting: str, context: str) -> None:
+    """회선 프로필이 하나도 없을 때, 현재 환경변수 번호를 기본 회선으로 시드."""
+    if not number:
+        return
+    if db.query(LineProfile).count() > 0:
+        return
+    db.add(
+        LineProfile(
+            number=number,
+            name="대표번호",
+            greeting=greeting,
+            context=context,
+            active=True,
+        )
+    )
+    db.flush()
+
+
 class GlossaryTerm(Base):
     """음성 인식 교정용 주요 단어 (설비명·제품명·약칭 등).
 
