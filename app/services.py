@@ -115,4 +115,9 @@ def _notify_team_email(ticket: Ticket, team, call: Call) -> None:
         "dashboard_url": f"{base}/ui/calls/{call.id}" if base else "",
     }
     subject, body = mailer.build_ticket_email(info)
-    mailer.send_email(recipient, subject, body)
+    # 통화 종료 처리를 막지 않도록 발송은 백그라운드 스레드에서
+    import threading
+
+    threading.Thread(
+        target=mailer.send_email, args=(recipient, subject, body), daemon=True
+    ).start()

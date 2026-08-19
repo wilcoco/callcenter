@@ -300,14 +300,20 @@ def health(db: Session = Depends(get_db)):
         db_kind, db_safe = "sqlite", False  # 재배포 시 자료 소실 위험
     else:
         db_kind, db_safe = url.split(":", 1)[0], False
+    try:
+        calls = db.query(Call).count()
+        tickets = db.query(Ticket).count()
+    except Exception:
+        calls = tickets = None
     return {
         "status": "ok",
         "llm_enabled": s.llm_enabled,
         "clawops_enabled": callbot.clawops_enabled(),
+        "email_enabled": s.email_enabled,
         "database": db_kind,
         "database_persistent": db_safe,
-        "stored_calls": db.query(Call).count(),
-        "stored_tickets": db.query(Ticket).count(),
+        "stored_calls": calls,
+        "stored_tickets": tickets,
         "warning": None if db_safe else "SQLite는 재배포 시 자료가 사라집니다. Railway에 PostgreSQL을 연결하세요.",
     }
 
