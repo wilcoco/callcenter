@@ -291,12 +291,24 @@ def _call_dict(c: Call) -> dict:
 
 
 @app.get("/health")
-def health():
+def health(db: Session = Depends(get_db)):
     s = get_settings()
+    url = s.database_url
+    if url.startswith("postgres"):
+        db_kind, db_safe = "postgresql", True
+    elif url.startswith("sqlite"):
+        db_kind, db_safe = "sqlite", False  # 재배포 시 자료 소실 위험
+    else:
+        db_kind, db_safe = url.split(":", 1)[0], False
     return {
         "status": "ok",
         "llm_enabled": s.llm_enabled,
         "clawops_enabled": callbot.clawops_enabled(),
+        "database": db_kind,
+        "database_persistent": db_safe,
+        "stored_calls": db.query(Call).count(),
+        "stored_tickets": db.query(Ticket).count(),
+        "warning": None if db_safe else "SQLite는 재배포 시 자료가 사라집니다. Railway에 PostgreSQL을 연결하세요.",
     }
 
 
