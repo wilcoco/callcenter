@@ -10,7 +10,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .database import get_db
-from .models import Call, GlossaryTerm, KnowledgeDoc, LineProfile, Team, Ticket
+from .models import Call, GlossaryTerm, KnowledgeDoc, LineProfile, Team, Ticket, to_kst
 
 router = APIRouter()
 
@@ -136,7 +136,8 @@ def _status_badge(s: str) -> str:
 
 
 def _fmt_dt(value) -> str:
-    return value.strftime("%Y-%m-%d %H:%M") if value else "-"
+    kst = to_kst(value)
+    return kst.strftime("%Y-%m-%d %H:%M") if kst else "-"
 
 
 # ---------------------------------------------------------------------------

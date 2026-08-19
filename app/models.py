@@ -14,6 +14,18 @@ def _utcnow() -> dt.datetime:
     return dt.datetime.now(dt.timezone.utc)
 
 
+KST = dt.timezone(dt.timedelta(hours=9))
+
+
+def to_kst(value: dt.datetime | None) -> dt.datetime | None:
+    """저장된 UTC 시각을 한국시간(KST)으로 변환. 표시용."""
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=dt.timezone.utc)
+    return value.astimezone(KST)
+
+
 # ---------------------------------------------------------------------------
 # 기본 팀 정의 — 라우팅(분류) 대상이자 시드 데이터
 # ---------------------------------------------------------------------------

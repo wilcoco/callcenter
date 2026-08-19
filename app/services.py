@@ -7,7 +7,7 @@ import logging
 from sqlalchemy.orm import Session
 
 from . import llm
-from .models import Call, Message, Team, Ticket
+from .models import Call, Message, Team, Ticket, to_kst
 
 log = logging.getLogger(__name__)
 
@@ -111,7 +111,9 @@ def _notify_team_email(ticket: Ticket, team, call: Call) -> None:
         "summary": ticket.summary,
         "transcript": call.transcript_text(),
         "call_id": call.id,
-        "created_at": ticket.created_at.strftime("%Y-%m-%d %H:%M") if ticket.created_at else "",
+        "created_at": (
+            to_kst(ticket.created_at).strftime("%Y-%m-%d %H:%M") if ticket.created_at else ""
+        ),
         "dashboard_url": f"{base}/ui/calls/{call.id}" if base else "",
     }
     subject, body = mailer.build_ticket_email(info)
