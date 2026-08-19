@@ -170,9 +170,15 @@ def clear_active_caller(call_id: str) -> None:
 
 
 def get_active_caller_number() -> str:
-    if not _active_callers:
-        return ""
-    return list(_active_callers.values())[-1]
+    """동시 통화 안전: 진행 중인 통화가 정확히 1건일 때만 그 번호를 반환.
+
+    2건 이상이 동시에 진행 중이면 어느 통화의 번호인지 구분할 수 없으므로
+    빈 문자열을 반환한다(→ 도구가 unknown 반환 → AI가 직접 연락처를 물음).
+    """
+    numbers = [n for n in _active_callers.values() if n]
+    if len(numbers) == 1:
+        return numbers[0]
+    return ""
 
 
 # ---------------------------------------------------------------------------
@@ -337,11 +343,12 @@ def _make_agent(number: str, greeting: str | None, context: str | None):
     from clawops.agent import ClawOpsAgent
 
     s = get_settings()
+    # session_factory: 통화마다 독립 세션을 생성 → 동시 통화 지원
     agent = ClawOpsAgent(
         api_key=s.clawops_api_key,
         account_id=s.clawops_account_id,
         from_=number,
-        session=_build_session(greeting, context),
+        session_factory=lambda: _build_session(greeting, context),
     )
     _attach_handlers(agent)
     return agent

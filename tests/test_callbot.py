@@ -184,11 +184,14 @@ def test_clawops_webhook_signature_rejected(monkeypatch):
     assert r.status_code == 403  # 서명 없음 → 거부
 
 
-def test_active_caller_tracking():
+def test_active_caller_tracking_concurrency_safe():
+    # 통화 1건일 때만 번호 반환
     callbot.set_active_caller("C1", "+821011112222")
     assert callbot.get_active_caller_number() == "+821011112222"
+    # 동시 2건이면 구분 불가 → 빈 문자열 (AI가 직접 물음)
     callbot.set_active_caller("C2", "07033334444")
-    assert callbot.get_active_caller_number() == "07033334444"  # 최근 통화
+    assert callbot.get_active_caller_number() == ""
+    # 하나 끝나면 다시 남은 1건 번호 반환
     callbot.clear_active_caller("C2")
     assert callbot.get_active_caller_number() == "+821011112222"
     callbot.clear_active_caller("C1")
