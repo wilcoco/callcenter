@@ -48,6 +48,19 @@ class Settings(BaseSettings):
     public_base_url: str = ""
     max_turns: int = 8
 
+    # ----- 이메일(SMTP) 알림 -----
+    smtp_host: str = ""          # 예: mail.icams.co.kr
+    smtp_port: int = 465         # SSL 465 / STARTTLS 587
+    smtp_user: str = ""          # 로그인 계정(전체 메일주소, 예: callcenter@icams.co.kr)
+    smtp_password: str = ""      # ⚠️ Railway 환경변수에만 입력 (코드/깃에 넣지 말 것)
+    smtp_from: str = ""          # 발신 표시 주소 (비우면 smtp_user 사용)
+    smtp_ssl: bool = True        # 465=True, 587=False(STARTTLS)
+    notify_email: str = ""       # 팀 이메일이 없을 때 보낼 기본 수신처
+
+    @property
+    def email_enabled(self) -> bool:
+        return bool(self.smtp_host and self.smtp_user and self.smtp_password)
+
     @property
     def llm_enabled(self) -> bool:
         return bool(self.anthropic_api_key)

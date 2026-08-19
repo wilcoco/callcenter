@@ -84,4 +84,35 @@ def finalize_call(db: Session, call: Call) -> Ticket | None:
         "call %s -> 티켓 #%s [%s/%s] %s",
         call.call_sid, ticket.id, ticket.team_key, ticket.priority, ticket.title,
     )
+    _notify_team_email(ticket, team, call)
     return ticket
+
+
+def _notify_team_email(ticket: Ticket, team, call: Call) -> None:
+    """담당 팀 이메일로 접수 알림 발송 (best-effort, 실패해도 무시)."""
+    from .config import get_settings
+    from . import mailer
+
+    settings = get_settings()
+    if not settings.email_enabled:
+        return
+    recipient = mailer.resolve_recipient(team.email if team else "")
+    if not recipient:
+        log.info("이메일 수신처 없음(팀/기본 모두 미설정) — 발송 생략")
+        return
+
+    base = settings.public_base_url.rstrip("/")
+    info = {
+        "team_name": ticket.team_name,
+        "title": ticket.title,
+        "priority": ticket.priority,
+        "caller_name": ticket.caller_name,
+        "callback": ticket.callback,
+        "summary": ticket.summary,
+        "transcript": call.transcript_text(),
+        "call_id": call.id,
+        "created_at": ticket.created_at.strftime("%Y-%m-%d %H:%M") if ticket.created_at else "",
+        "dashboard_url": f"{base}/ui/calls/{call.id}" if base else "",
+    }
+    subject, body = mailer.build_ticket_email(info)
+    mailer.send_email(recipient, subject, body)

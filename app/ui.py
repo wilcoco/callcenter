@@ -123,6 +123,7 @@ def _page(title: str, body: str, active: str) -> str:
 <a href="/ui/knowledge"{nav_cls('knowledge')}>지식 문서</a>
 <a href="/ui/glossary"{nav_cls('glossary')}>용어 사전</a>
 <a href="/ui/lines"{nav_cls('lines')}>전화 회선</a>
+<a href="/ui/teams"{nav_cls('teams')}>팀 이메일</a>
 </nav><main><h1>{_e(title)}</h1>{body}</main></body></html>"""
 
 
@@ -383,6 +384,45 @@ def knowledge_delete(doc_id: int, db: Session = Depends(get_db)):
         db.delete(doc)
         db.flush()
     return RedirectResponse("/ui/knowledge", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# 팀 이메일 (담당 팀 접수 알림 수신 주소)
+# ---------------------------------------------------------------------------
+@router.get("/ui/teams", response_class=HTMLResponse)
+def teams_page(db: Session = Depends(get_db)):
+    from .config import get_settings
+
+    teams = db.query(Team).order_by(Team.id).all()
+    rows = "".join(
+        f'<tr><td>{_e(t.name)}</td>'
+        f'<td><form class="inline" method="post" action="/ui/teams/{t.id}/email" style="display:flex;gap:.4rem">'
+        f'<input type="text" name="email" value="{_e(t.email)}" placeholder="team@icams.co.kr" style="max-width:280px">'
+        f'<button class="act">저장</button></form></td></tr>'
+        for t in teams
+    )
+    s = get_settings()
+    email_status = (
+        f'✅ SMTP 설정됨 ({_e(s.smtp_host)})' if s.email_enabled
+        else '⚠️ SMTP 미설정 — Railway 환경변수(SMTP_HOST/USER/PASSWORD 등)를 넣어야 발송됩니다'
+    )
+    default_to = _e(s.notify_email) or "(미설정)"
+    body = f"""
+<p class="hint">통화 접수 시 담당 팀 이메일로 내용이 자동 발송됩니다. 팀 이메일이 비어 있으면
+기본 수신처(NOTIFY_EMAIL)로 발송됩니다.<br>
+발송 상태: {email_status}<br>기본 수신처: {default_to}</p>
+<table><tr><th>팀</th><th>수신 이메일</th></tr>{rows}</table>"""
+    return _page("팀 이메일", body, "teams")
+
+
+@router.post("/ui/teams/{team_id}/email")
+def team_email_update(team_id: int, email: str = Form(""), db: Session = Depends(get_db)):
+    t = db.get(Team, team_id)
+    if not t:
+        raise HTTPException(404, "team not found")
+    t.email = email.strip()
+    db.flush()
+    return RedirectResponse("/ui/teams", status_code=303)
 
 
 # ---------------------------------------------------------------------------
