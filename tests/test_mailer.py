@@ -60,3 +60,39 @@ def test_team_email_edit_via_web():
     assert r.status_code == 303
     with session_scope() as db:
         assert db.get(Team, tid).email == "quality@icams.co.kr"
+
+
+def test_collect_recipients_includes_always_team_and_contacts(monkeypatch):
+    from app import services
+    from app.config import get_settings
+    from app.database import session_scope
+    from app.models import Contact, Team
+
+    s = get_settings()
+    monkeypatch.setattr(s, "always_email", "json@icams.co.kr")
+    monkeypatch.setattr(s, "notify_email", "")
+
+    with session_scope() as db:
+        team = db.query(Team).filter_by(key="quality").first()
+        team.email = "quality-inbox@icams.co.kr"
+        db.add(Contact(name="김담당", email="kim@icams.co.kr", team_key="quality", active=True))
+        db.add(Contact(name="전체관리", email="all@icams.co.kr", team_key="", active=True))
+        db.add(Contact(name="딴팀", email="other@icams.co.kr", team_key="sales", active=True))
+    # 커밋 후(별개 트랜잭션) 수신자 조회
+    with session_scope() as db:
+        team_obj = db.query(Team).filter_by(key="quality").first()
+        rec = services.collect_recipients("quality", team_obj)
+
+    assert "json@icams.co.kr" in rec        # 항상
+    assert "quality-inbox@icams.co.kr" in rec  # 팀
+    assert "kim@icams.co.kr" in rec         # 팀 담당자
+    assert "all@icams.co.kr" in rec         # 전체 담당자
+    assert "other@icams.co.kr" not in rec   # 다른 팀 담당자 제외
+
+
+def test_send_email_accepts_list(monkeypatch):
+    s = get_settings()
+    monkeypatch.setattr(s, "smtp_host", "")  # 미설정이라 실제 발송 안 함
+    # 리스트/쉼표 문자열 모두 정규화되는지
+    assert mailer._normalize_recipients(["a@x.com", "a@x.com", "b@y.com", "bad"]) == ["a@x.com", "b@y.com"]
+    assert mailer._normalize_recipients("a@x.com, b@y.com") == ["a@x.com", "b@y.com"]

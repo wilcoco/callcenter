@@ -247,6 +247,24 @@ class Ticket(Base):
     call: Mapped["Call"] = relationship(back_populates="ticket")
 
 
+class Contact(Base):
+    """담당자. 팀(콜 종류)에 등록하면 그 팀 접수 시 이메일을 함께 받는다.
+
+    한 담당자가 여러 팀을 맡으면 팀마다 행을 추가한다.
+    team_key가 비어 있으면 '전체' 담당자로, 모든 접수를 받는다.
+    """
+
+    __tablename__ = "contacts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(128))
+    email: Mapped[str] = mapped_column(String(255), default="")
+    phone: Mapped[str] = mapped_column(String(64), default="")
+    team_key: Mapped[str] = mapped_column(String(32), default="", index=True)  # "" = 전체
+    active: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=_utcnow)
+
+
 class LineProfile(Base):
     """전화 회선(번호)별 프로필. 번호마다 인사말·용도를 다르게 운영.
 

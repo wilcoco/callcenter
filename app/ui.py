@@ -10,7 +10,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .database import get_db
-from .models import Call, GlossaryTerm, KnowledgeDoc, LineProfile, Team, Ticket, to_kst
+from .models import Call, Contact, GlossaryTerm, KnowledgeDoc, LineProfile, Team, Ticket, to_kst
 
 router = APIRouter()
 
@@ -92,6 +92,12 @@ def _e(text) -> str:
     return html.escape(str(text or ""))
 
 
+def get_settings_email() -> str:
+    from .config import get_settings
+
+    return get_settings().always_email or "(설정 안 됨)"
+
+
 _STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
 
@@ -124,6 +130,7 @@ def _page(title: str, body: str, active: str) -> str:
 <a href="/ui/glossary"{nav_cls('glossary')}>용어 사전</a>
 <a href="/ui/lines"{nav_cls('lines')}>전화 회선</a>
 <a href="/ui/teams"{nav_cls('teams')}>팀 이메일</a>
+<a href="/ui/contacts"{nav_cls('contacts')}>담당자</a>
 </nav><main><h1>{_e(title)}</h1>{body}</main></body></html>"""
 
 
@@ -385,6 +392,74 @@ def knowledge_delete(doc_id: int, db: Session = Depends(get_db)):
         db.delete(doc)
         db.flush()
     return RedirectResponse("/ui/knowledge", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# 담당자 (팀별 접수 알림을 받는 개인)
+# ---------------------------------------------------------------------------
+def _team_options(db, selected: str) -> str:
+    opts = [f'<option value=""{" selected" if selected=="" else ""}>전체 (모든 접수)</option>']
+    for t in db.query(Team).order_by(Team.id).all():
+        sel = " selected" if selected == t.key else ""
+        opts.append(f'<option value="{t.key}"{sel}>{_e(t.name)}</option>')
+    return "".join(opts)
+
+
+@router.get("/ui/contacts", response_class=HTMLResponse)
+def contacts_page(db: Session = Depends(get_db)):
+    team_name = {t.key: t.name for t in db.query(Team).all()}
+    contacts = db.query(Contact).order_by(Contact.team_key, Contact.name).all()
+    rows = "".join(
+        f"<tr><td>{_e(c.name)}</td><td>{_e(c.email) or '-'}</td><td>{_e(c.phone) or '-'}</td>"
+        f'<td>{_e(team_name.get(c.team_key, "전체") if c.team_key else "전체")}</td>'
+        f'<td>{"🟢" if c.active else "⚪"}</td>'
+        f'<td><form class="inline" method="post" action="/ui/contacts/{c.id}/delete" '
+        f"onsubmit=\"return confirm('{_e(c.name)} 담당자를 삭제할까요?')\">"
+        f'<button class="danger">삭제</button></form></td></tr>'
+        for c in contacts
+    ) or '<tr><td colspan="6" class="empty">등록된 담당자가 없습니다.</td></tr>'
+
+    body = f"""
+<p class="hint">담당자를 팀에 등록하면, 그 팀으로 접수되는 모든 콜의 내용이 그 담당자 이메일로도
+발송됩니다. 팀을 '전체'로 하면 모든 접수를 받습니다. (모든 접수는 기본적으로 항상
+{_e(get_settings_email())}로도 발송됩니다.)</p>
+<form method="post" action="/ui/contacts" class="glossary-add">
+<div class="g-row">
+<div><label>이름 *</label><input type="text" name="name" required placeholder="홍길동"></div>
+<div><label>이메일</label><input type="text" name="email" placeholder="hong@icams.co.kr"></div>
+<div><label>휴대폰(선택)</label><input type="text" name="phone" placeholder="010-1234-5678"></div>
+</div>
+<label>담당 팀 (이 팀 접수를 받음)</label>
+<select name="team_key" class="team-select" style="max-width:260px">{_team_options(db, "")}</select>
+<button class="primary">담당자 추가</button>
+</form>
+<table><tr><th>이름</th><th>이메일</th><th>휴대폰</th><th>담당 팀</th><th>사용</th><th></th></tr>{rows}</table>"""
+    return _page("담당자", body, "contacts")
+
+
+@router.post("/ui/contacts")
+def contact_create(
+    name: str = Form(...),
+    email: str = Form(""),
+    phone: str = Form(""),
+    team_key: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    name = name.strip()
+    if name:
+        db.add(Contact(name=name, email=email.strip(), phone=phone.strip(),
+                       team_key=team_key.strip(), active=True))
+        db.flush()
+    return RedirectResponse("/ui/contacts", status_code=303)
+
+
+@router.post("/ui/contacts/{contact_id}/delete")
+def contact_delete(contact_id: int, db: Session = Depends(get_db)):
+    c = db.get(Contact, contact_id)
+    if c:
+        db.delete(c)
+        db.flush()
+    return RedirectResponse("/ui/contacts", status_code=303)
 
 
 # ---------------------------------------------------------------------------

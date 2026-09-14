@@ -7,9 +7,57 @@ import logging
 from sqlalchemy.orm import Session
 
 from . import llm
-from .models import Call, Message, Team, Ticket, to_kst
+from .models import Call, Contact, Message, Team, Ticket, to_kst
 
 log = logging.getLogger(__name__)
+
+_PLACEHOLDER_DOMAINS = ("example.com", "example.org")
+
+
+def _is_real_email(email: str | None) -> bool:
+    e = (email or "").strip()
+    return bool(e) and "@" in e and not e.endswith(_PLACEHOLDER_DOMAINS)
+
+
+def collect_recipients(team_key: str, team: Team | None) -> list[str]:
+    """이 접수를 받을 이메일 목록을 모은다 (중복 제거).
+
+    - always_email: 항상 함께 받는 주소 (설정 시)
+    - team.email: 팀 대표 수신 주소 (실제 주소일 때)
+    - 담당자(Contact): 해당 팀(team_key)에 등록된 담당자 + '전체' 담당자(team_key="")
+    - 위가 모두 없으면 notify_email(기본 수신처)
+    """
+    from .config import get_settings
+    from .database import session_scope
+
+    settings = get_settings()
+    out: list[str] = []
+
+    def add(email: str | None) -> None:
+        e = (email or "").strip()
+        if _is_real_email(e) and e.lower() not in [x.lower() for x in out]:
+            out.append(e)
+
+    add(settings.always_email)
+    if team is not None:
+        add(team.email)
+
+    try:
+        with session_scope() as db:
+            contacts = (
+                db.query(Contact)
+                .filter(Contact.active == True)  # noqa: E712
+                .filter((Contact.team_key == team_key) | (Contact.team_key == ""))
+                .all()
+            )
+            for c in contacts:
+                add(c.email)
+    except Exception as exc:  # pragma: no cover
+        log.warning("담당자 조회 실패: %s", exc)
+
+    if not out:
+        add(settings.notify_email)
+    return out
 
 
 def get_or_create_call(
@@ -96,9 +144,10 @@ def _notify_team_email(ticket: Ticket, team, call: Call) -> None:
     settings = get_settings()
     if not settings.email_enabled:
         return
-    recipient = mailer.resolve_recipient(team.email if team else "")
-    if not recipient:
-        log.info("이메일 수신처 없음(팀/기본 모두 미설정) — 발송 생략")
+
+    recipients = collect_recipients(ticket.team_key, team)
+    if not recipients:
+        log.info("이메일 수신처 없음 — 발송 생략")
         return
 
     base = settings.public_base_url.rstrip("/")
@@ -121,5 +170,5 @@ def _notify_team_email(ticket: Ticket, team, call: Call) -> None:
     import threading
 
     threading.Thread(
-        target=mailer.send_email, args=(recipient, subject, body), daemon=True
+        target=mailer.send_email, args=(recipients, subject, body), daemon=True
     ).start()

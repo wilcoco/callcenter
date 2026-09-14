@@ -55,7 +55,8 @@ class Settings(BaseSettings):
     smtp_password: str = ""      # ⚠️ Railway 환경변수에만 입력 (코드/깃에 넣지 말 것)
     smtp_from: str = ""          # 발신 표시 주소 (비우면 smtp_user 사용)
     smtp_ssl: bool = True        # 465=True, 587=False(STARTTLS)
-    notify_email: str = ""       # 팀 이메일이 없을 때 보낼 기본 수신처
+    notify_email: str = ""       # 팀 이메일/담당자가 없을 때 보낼 기본 수신처
+    always_email: str = "json@icams.co.kr"  # 모든 접수를 항상 함께 받는 주소
 
     @property
     def email_enabled(self) -> bool:
