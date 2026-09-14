@@ -96,3 +96,44 @@ def test_send_email_accepts_list(monkeypatch):
     # 리스트/쉼표 문자열 모두 정규화되는지
     assert mailer._normalize_recipients(["a@x.com", "a@x.com", "b@y.com", "bad"]) == ["a@x.com", "b@y.com"]
     assert mailer._normalize_recipients("a@x.com, b@y.com") == ["a@x.com", "b@y.com"]
+
+
+def test_directory_seeded_and_resolves_email():
+    from app.database import session_scope
+    from app.models import DirectoryPerson
+
+    with session_scope() as db:
+        p = db.query(DirectoryPerson).filter_by(login_id="afero").first()
+        assert p is not None
+        assert p.name == "오명진"
+        assert p.email == "afero@icams.co.kr"
+        # 대표전화 계정도 포함
+        assert db.query(DirectoryPerson).filter_by(login_id="callcenter").first().name == "대표전화"
+
+
+def test_ticket_assign_learns_team_contacts():
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.database import session_scope
+    from app.models import Call, Ticket, Contact, Message
+
+    client = TestClient(app)
+    # 통화+티켓 하나 생성
+    with session_scope() as db:
+        c = Call(call_sid="ASSIGN_1", from_number="0701", to_number="0705", status="completed")
+        db.add(c); db.flush()
+        db.add(Message(call_id=c.id, role="caller", text="설비 문제"))
+        t = Ticket(call_id=c.id, team_key="prodtech", team_name="생산기술팀",
+                   title="설비 점검", summary="설비 점검 요청", priority="normal", status="open")
+        db.add(t); db.flush()
+        tid = t.id
+
+    # afero(오명진) 이메일로 지정
+    r = client.post(f"/ui/tickets/{tid}/assign",
+                    data={"emails": ["afero@icams.co.kr"]}, follow_redirects=False)
+    assert r.status_code == 303
+    # 학습: prodtech 팀 담당자로 등록됐는지
+    with session_scope() as db:
+        cc = db.query(Contact).filter_by(team_key="prodtech", email="afero@icams.co.kr").first()
+        assert cc is not None
+        assert cc.name == "오명진"

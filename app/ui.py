@@ -10,7 +10,10 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .database import get_db
-from .models import Call, Contact, GlossaryTerm, KnowledgeDoc, LineProfile, Team, Ticket, to_kst
+from .models import (
+    Call, Contact, DirectoryPerson, GlossaryTerm, KnowledgeDoc,
+    LineProfile, Team, Ticket, to_kst,
+)
 
 router = APIRouter()
 
@@ -397,6 +400,14 @@ def knowledge_delete(doc_id: int, db: Session = Depends(get_db)):
 # ---------------------------------------------------------------------------
 # 담당자 (팀별 접수 알림을 받는 개인)
 # ---------------------------------------------------------------------------
+def _directory_options(db) -> str:
+    people = db.query(DirectoryPerson).order_by(DirectoryPerson.name).all()
+    return "".join(
+        f'<option value="{_e(p.email)}" data-name="{_e(p.name)}">{_e(p.name)} ({_e(p.login_id)})</option>'
+        for p in people
+    )
+
+
 def _team_options(db, selected: str) -> str:
     opts = [f'<option value=""{" selected" if selected=="" else ""}>전체 (모든 접수)</option>']
     for t in db.query(Team).order_by(Team.id).all():
@@ -424,7 +435,12 @@ def contacts_page(db: Session = Depends(get_db)):
 발송됩니다. 팀을 '전체'로 하면 모든 접수를 받습니다. (모든 접수는 기본적으로 항상
 {_e(get_settings_email())}로도 발송됩니다.)</p>
 <form method="post" action="/ui/contacts" class="glossary-add">
-<div class="g-row">
+<label>명단에서 선택 (이름·이메일 자동 입력)</label>
+<select id="dirpick" style="max-width:320px" onchange="var o=this.options[this.selectedIndex];if(o.value){{document.querySelector('[name=name]').value=o.dataset.name;document.querySelector('[name=email]').value=o.value;}}">
+<option value="">— 직원 선택 —</option>
+{_directory_options(db)}
+</select>
+<div class="g-row" style="margin-top:.6rem">
 <div><label>이름 *</label><input type="text" name="name" required placeholder="홍길동"></div>
 <div><label>이메일</label><input type="text" name="email" placeholder="hong@icams.co.kr"></div>
 <div><label>휴대폰(선택)</label><input type="text" name="phone" placeholder="010-1234-5678"></div>
@@ -451,6 +467,45 @@ def contact_create(
                        team_key=team_key.strip(), active=True))
         db.flush()
     return RedirectResponse("/ui/contacts", status_code=303)
+
+
+@router.post("/ui/tickets/{ticket_id}/assign")
+def ticket_assign(
+    ticket_id: int,
+    emails: list[str] = Form(default=[]),
+    db: Session = Depends(get_db),
+):
+    """티켓에 담당자(복수) 지정 → 그 팀 담당자로 등록(학습) + 지금 이메일 발송.
+
+    이후 같은 팀 접수는 이 담당자들에게 자동 전달된다.
+    """
+    from . import services
+
+    t = db.get(Ticket, ticket_id)
+    if not t:
+        raise HTTPException(404, "ticket not found")
+    dir_by_email = {p.email: p.name for p in db.query(DirectoryPerson).all()}
+    for email in emails:
+        email = (email or "").strip()
+        if not email or "@" not in email:
+            continue
+        exists = (
+            db.query(Contact)
+            .filter(Contact.team_key == t.team_key, Contact.email == email)
+            .first()
+        )
+        if not exists:
+            db.add(Contact(
+                name=dir_by_email.get(email, email.split("@")[0]),
+                email=email, team_key=t.team_key, active=True,
+            ))
+    db.flush()
+    # 지금 이 건을 지정 담당자들에게 즉시 발송 (학습 확인용)
+    call = db.get(Call, t.call_id)
+    team = db.query(Team).filter_by(key=t.team_key).first()
+    if call is not None:
+        services._notify_team_email(t, team, call)
+    return RedirectResponse(f"/ui/calls/{t.call_id}", status_code=303)
 
 
 @router.post("/ui/contacts/{contact_id}/delete")
@@ -705,15 +760,31 @@ def call_detail_page(call_id: int, db: Session = Depends(get_db)):
     ticket_html = ""
     if call.ticket:
         t = call.ticket
+        # 현재 이 팀 담당자 목록
+        team_contacts = (
+            db.query(Contact).filter(Contact.team_key == t.team_key, Contact.active == True)  # noqa: E712
+            .order_by(Contact.name).all()
+        )
+        cur = ", ".join(f"{_e(c.name)}({_e(c.email)})" for c in team_contacts) or "없음"
+        assign_form = f"""
+<form method="post" action="/ui/tickets/{t.id}/assign" style="margin-top:.6rem">
+<label>담당자 지정 — 여러 명 선택 가능 (Ctrl/Shift). 지정하면 지금 이메일 발송 +
+앞으로 <b>{_e(t.team_name)}</b> 접수는 이 담당자들에게 자동 전달(학습)</label>
+<select name="emails" multiple size="6" style="width:100%;max-width:420px">
+{_directory_options(db)}
+</select>
+<button class="primary">지정 + 학습</button>
+</form>"""
         ticket_html = f"""
 <div class="detail"><strong>🎫 배정된 티켓 #{t.id}</strong>
 <dl>
 <dt>담당팀</dt><dd>{_e(t.team_name)} {_priority_badge(t.priority)} {_status_badge(t.status)}</dd>
+<dt>현재 담당자</dt><dd>{cur}</dd>
 <dt>문의자</dt><dd>{_e(t.caller_name or '-')}</dd>
 <dt>회신 연락처</dt><dd>{_e(t.callback or '-')}</dd>
 <dt>제목</dt><dd>{_e(t.title)}</dd>
 <dt>요약</dt><dd>{_e(t.summary)}</dd>
-</dl></div>"""
+</dl>{assign_form}</div>"""
 
     body = f"""
 <div class="detail">

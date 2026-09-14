@@ -247,6 +247,40 @@ class Ticket(Base):
     call: Mapped["Call"] = relationship(back_populates="ticket")
 
 
+EMAIL_DOMAIN = "icams.co.kr"
+
+
+class DirectoryPerson(Base):
+    """회사 임직원 주소록 (이름 → 이메일). 담당자 지정 시 이름으로 검색해 씀."""
+
+    __tablename__ = "directory"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    login_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(128), index=True)
+    email: Mapped[str] = mapped_column(String(255))
+
+
+def seed_directory(db: Session) -> None:
+    """directory_seed.csv에서 임직원 명단을 시드 (테이블이 비어있을 때만)."""
+    if db.query(DirectoryPerson).count() > 0:
+        return
+    import csv
+    import os
+
+    path = os.path.join(os.path.dirname(__file__), "directory_seed.csv")
+    if not os.path.exists(path):
+        return
+    with open(path, encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            login = (row.get("login_id") or "").strip()
+            name = (row.get("name") or "").strip()
+            if not login or not name:
+                continue
+            db.add(DirectoryPerson(login_id=login, name=name, email=f"{login}@{EMAIL_DOMAIN}"))
+    db.flush()
+
+
 class Contact(Base):
     """담당자. 팀(콜 종류)에 등록하면 그 팀 접수 시 이메일을 함께 받는다.
 
