@@ -299,6 +299,33 @@ class Contact(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=_utcnow)
 
 
+def seed_team_contacts(db: Session) -> None:
+    """team_members_seed.csv의 팀장·팀원을 팀 담당자로 시드 (Contact 비어있을 때만).
+
+    이메일 = login_id@icams.co.kr. 접수 시 그 팀의 모든 팀원에게 발송된다.
+    """
+    if db.query(Contact).count() > 0:
+        return
+    import csv
+    import os
+
+    path = os.path.join(os.path.dirname(__file__), "team_members_seed.csv")
+    if not os.path.exists(path):
+        return
+    with open(path, encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            team_key = (row.get("team_key") or "").strip()
+            name = (row.get("name") or "").strip()
+            login = (row.get("login_id") or "").strip()
+            if not team_key or not name or not login:
+                continue
+            db.add(Contact(
+                name=name, email=f"{login}@{EMAIL_DOMAIN}",
+                team_key=team_key, active=True,
+            ))
+    db.flush()
+
+
 class LineProfile(Base):
     """전화 회선(번호)별 프로필. 번호마다 인사말·용도를 다르게 운영.
 

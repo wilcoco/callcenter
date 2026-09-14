@@ -84,7 +84,7 @@ def test_collect_recipients_includes_always_team_and_contacts(monkeypatch):
         rec = services.collect_recipients("quality", team_obj)
 
     assert "json@icams.co.kr" in rec        # 항상
-    assert "quality-inbox@icams.co.kr" in rec  # 팀
+    assert "quality-inbox@icams.co.kr" not in rec  # 대표 팀메일은 미사용
     assert "kim@icams.co.kr" in rec         # 팀 담당자
     assert "all@icams.co.kr" in rec         # 전체 담당자
     assert "other@icams.co.kr" not in rec   # 다른 팀 담당자 제외

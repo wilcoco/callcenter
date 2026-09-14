@@ -132,7 +132,6 @@ def _page(title: str, body: str, active: str) -> str:
 <a href="/ui/knowledge"{nav_cls('knowledge')}>지식 문서</a>
 <a href="/ui/glossary"{nav_cls('glossary')}>용어 사전</a>
 <a href="/ui/lines"{nav_cls('lines')}>전화 회선</a>
-<a href="/ui/teams"{nav_cls('teams')}>팀 이메일</a>
 <a href="/ui/contacts"{nav_cls('contacts')}>담당자</a>
 </nav><main><h1>{_e(title)}</h1>{body}</main></body></html>"""
 

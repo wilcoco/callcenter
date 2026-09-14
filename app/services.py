@@ -39,8 +39,7 @@ def collect_recipients(team_key: str, team: Team | None) -> list[str]:
             out.append(e)
 
     add(settings.always_email)
-    if team is not None:
-        add(team.email)
+    # 대표 팀메일(team.email)은 사용하지 않는다 — 팀장·팀원(담당자)에게 직접 발송
 
     try:
         with session_scope() as db:
