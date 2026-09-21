@@ -326,6 +326,22 @@ def seed_team_contacts(db: Session) -> None:
     db.flush()
 
 
+class RoutingExample(Base):
+    """관리자가 팀 배정을 수정한 학습 사례.
+
+    통화 내용(text)과 올바른 팀(team_key)을 저장해, 다음 통화 분석 시
+    비슷한 사례를 AI에게 few-shot 참고자료로 제공한다(재훈련 없는 in-context 학습).
+    """
+
+    __tablename__ = "routing_examples"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    text: Mapped[str] = mapped_column(Text)          # 통화 요약/제목(분류 근거)
+    team_key: Mapped[str] = mapped_column(String(32), index=True)
+    team_name: Mapped[str] = mapped_column(String(128), default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=_utcnow)
+
+
 class LineProfile(Base):
     """전화 회선(번호)별 프로필. 번호마다 인사말·용도를 다르게 운영.
 

@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from .database import get_db
 from .models import (
     Call, Contact, DirectoryPerson, GlossaryTerm, KnowledgeDoc,
-    LineProfile, Team, Ticket, to_kst,
+    LineProfile, RoutingExample, Team, Ticket, to_kst,
 )
 
 router = APIRouter()
@@ -284,15 +284,21 @@ def tickets_page(
 def change_ticket_team(
     ticket_id: int, team_key: str = Form(...), db: Session = Depends(get_db)
 ):
-    """관리자가 자동 배정된 팀을 다른 팀으로 재배정."""
+    """관리자가 자동 배정된 팀을 다른 팀으로 재배정 → AI 학습 사례로 저장."""
     team = db.query(Team).filter_by(key=team_key).one_or_none()
     if team is None:
         raise HTTPException(400, "invalid team")
     ticket = db.get(Ticket, ticket_id)
     if not ticket:
         raise HTTPException(404, "ticket not found")
+    old_key = ticket.team_key
     ticket.team_key = team.key
     ticket.team_name = team.name
+    # 실제로 팀이 바뀐 경우만 학습 사례로 기록 (통화 내용 → 올바른 팀)
+    if old_key != team.key:
+        sig = " ".join(x for x in [ticket.title, ticket.summary] if x).strip()
+        if sig:
+            db.add(RoutingExample(text=sig[:300], team_key=team.key, team_name=team.name))
     db.flush()
     return RedirectResponse("/ui/tickets", status_code=303)
 

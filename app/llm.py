@@ -127,7 +127,39 @@ def _company_context() -> str:
     return f"\n회사 소개(맥락): {ctx}\n" if ctx else ""
 
 
-_ANALYZE_SYSTEM = f"""당신은 회사 대표번호 통화 기록 분석가입니다.
+def _routing_examples_block(transcript: str, limit: int = 15) -> str:
+    """관리자 수정 학습 사례를 통화와 관련도 순으로 뽑아 few-shot 블록 생성."""
+    try:
+        from .database import session_scope
+        from .models import RoutingExample
+
+        with session_scope() as db:
+            examples = db.query(RoutingExample).order_by(RoutingExample.id.desc()).limit(300).all()
+            rows = [(e.text or "", e.team_key, e.team_name) for e in examples]
+    except Exception as exc:  # pragma: no cover
+        log.warning("학습 사례 로드 실패: %s", exc)
+        return ""
+    if not rows:
+        return ""
+
+    def score(text: str) -> int:
+        words = [w for w in re.split(r"[\s,./]+", text) if len(w) >= 2]
+        return sum(1 for w in words if w in transcript)
+
+    ranked = sorted(rows, key=lambda r: (score(r[0]), 1), reverse=True)[:limit]
+    lines = "\n".join(f'- "{t[:70]}" → {name}({key})' for t, key, name in ranked if t)
+    if not lines:
+        return ""
+    return f"""
+
+[관리자 수정 학습 사례 — 최우선 참고]
+과거 관리자가 아래 통화들을 이 팀으로 정정했습니다.
+새 통화가 아래 사례와 비슷하면 같은 팀으로 배정하세요. (직접 지정 다음으로 우선)
+{lines}"""
+
+
+def _analyze_system(transcript: str = "") -> str:
+    return f"""당신은 회사 대표번호 통화 기록 분석가입니다.
 주어진 통화 전문을 읽고, 담당 팀 배정과 업무 요약을 작성하세요.
 {_company_context()}
 
@@ -136,11 +168,13 @@ _ANALYZE_SYSTEM = f"""당신은 회사 대표번호 통화 기록 분석가입�
 
 배정 원칙:
 - 전화 건 사람(구성원)이 특정 팀이나 임원을 직접 지정했으면 반드시 그 팀/임원에게 배정하세요.
-- 지정이 없으면 내용의 맥락으로 판단해 배정하세요.
+- 아래 '관리자 수정 학습 사례'와 비슷한 통화는 그 사례의 팀으로 배정하세요.
+- 지정도 유사 사례도 없으면 내용의 맥락으로 판단해 배정하세요.
 - 일상적인 업무·문의는 반드시 실무 팀에 배정하세요.
 - [임원]/[대표] (key가 exec_ 또는 ceo_로 시작)는 경영 판단이 필요한 중대 사안,
   법적 분쟁, 대형 사고·리콜, 임원/대표 면담 요청일 때만 배정하세요.
 - 어느 쪽인지 모호하면 실무 팀 또는 general을 선택하세요.
+{_routing_examples_block(transcript)}
 
 반드시 아래 JSON만 출력하세요:
 {{"team_key": "<위 key 중 하나>",
@@ -228,7 +262,7 @@ def analyze_call(transcript: str) -> dict:
             resp = _client().messages.create(
                 model=settings.analysis_model,
                 max_tokens=500,
-                system=_ANALYZE_SYSTEM,
+                system=_analyze_system(transcript),
                 messages=[{"role": "user", "content": transcript}],
             )
             data = _extract_json(resp.content[0].text)
