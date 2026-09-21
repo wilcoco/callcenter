@@ -407,6 +407,20 @@ def _directory_options(db) -> str:
     )
 
 
+def _directory_datalist(db, list_id: str = "dirlist") -> str:
+    """이름으로 검색되는 datalist + 이름→{이름,이메일} JS 맵.
+
+    input(list=list_id)에서 '이름 (아이디)'를 고르면 window.DIRMAP으로 조회 가능.
+    """
+    import json as _json
+
+    people = db.query(DirectoryPerson).order_by(DirectoryPerson.name).all()
+    options = "".join(f'<option value="{_e(p.name)} ({_e(p.login_id)})"></option>' for p in people)
+    mp = {f"{p.name} ({p.login_id})": {"n": p.name, "e": p.email} for p in people}
+    script = f"<script>window.DIRMAP={_json.dumps(mp, ensure_ascii=False)};</script>"
+    return f'<datalist id="{list_id}">{options}</datalist>{script}'
+
+
 def _team_options(db, selected: str) -> str:
     opts = [f'<option value=""{" selected" if selected=="" else ""}>전체 (모든 접수)</option>']
     for t in db.query(Team).order_by(Team.id).all():
@@ -434,11 +448,10 @@ def contacts_page(db: Session = Depends(get_db)):
 발송됩니다. 팀을 '전체'로 하면 모든 접수를 받습니다. (모든 접수는 기본적으로 항상
 {_e(get_settings_email())}로도 발송됩니다.)</p>
 <form method="post" action="/ui/contacts" class="glossary-add">
-<label>명단에서 선택 (이름·이메일 자동 입력)</label>
-<select id="dirpick" style="max-width:320px" onchange="var o=this.options[this.selectedIndex];if(o.value){{document.querySelector('[name=name]').value=o.dataset.name;document.querySelector('[name=email]').value=o.value;}}">
-<option value="">— 직원 선택 —</option>
-{_directory_options(db)}
-</select>
+<label>담당자 검색 (이름 입력 후 목록에서 선택 → 이름·이메일 자동 입력)</label>
+<input type="text" list="dirlist" id="dirsearch" placeholder="이름 입력..." autocomplete="off" style="max-width:320px"
+oninput="var v=(window.DIRMAP||{{}})[this.value];if(v){{document.querySelector('[name=name]').value=v.n;document.querySelector('[name=email]').value=v.e;}}">
+{_directory_datalist(db, "dirlist")}
 <div class="g-row" style="margin-top:.6rem">
 <div><label>이름 *</label><input type="text" name="name" required placeholder="홍길동"></div>
 <div><label>이메일</label><input type="text" name="email" placeholder="hong@icams.co.kr"></div>
@@ -767,9 +780,11 @@ def call_detail_page(call_id: int, db: Session = Depends(get_db)):
         cur = ", ".join(f"{_e(c.name)}({_e(c.email)})" for c in team_contacts) or "없음"
         assign_form = f"""
 <form method="post" action="/ui/tickets/{t.id}/assign" style="margin-top:.6rem">
-<label>담당자 지정 — 여러 명 선택 가능 (Ctrl/Shift). 지정하면 지금 이메일 발송 +
+<label>담당자 지정 — 이름 검색 후 여러 명 선택 (Ctrl/Shift). 지정하면 지금 이메일 발송 +
 앞으로 <b>{_e(t.team_name)}</b> 접수는 이 담당자들에게 자동 전달(학습)</label>
-<select name="emails" multiple size="6" style="width:100%;max-width:420px">
+<input type="text" placeholder="이름 검색..." autocomplete="off" style="max-width:420px;margin-bottom:.4rem"
+onkeyup="var q=this.value.trim();var s=document.getElementById('assignsel');for(var i=0;i<s.options.length;i++){{var o=s.options[i];o.hidden=q!==''&&o.text.indexOf(q)<0;}}">
+<select name="emails" id="assignsel" multiple size="8" style="width:100%;max-width:420px">
 {_directory_options(db)}
 </select>
 <button class="primary">지정 + 학습</button>
