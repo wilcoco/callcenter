@@ -441,7 +441,9 @@ def contacts_page(db: Session = Depends(get_db)):
     contacts = db.query(Contact).order_by(Contact.team_key, Contact.name).all()
     rows = "".join(
         f"<tr><td>{_e(c.name)}</td><td>{_e(c.email) or '-'}</td><td>{_e(c.phone) or '-'}</td>"
-        f'<td>{_e(team_name.get(c.team_key, "전체") if c.team_key else "전체")}</td>'
+        f'<td><form class="inline" method="post" action="/ui/contacts/{c.id}/team" style="display:flex;gap:.3rem">'
+        f'<select name="team_key" class="team-select">{_team_options(db, c.team_key)}</select>'
+        f'<button class="act">변경</button></form></td>'
         f'<td>{"🟢" if c.active else "⚪"}</td>'
         f'<td><form class="inline" method="post" action="/ui/contacts/{c.id}/delete" '
         f"onsubmit=\"return confirm('{_e(c.name)} 담당자를 삭제할까요?')\">"
@@ -532,6 +534,22 @@ def contact_delete(contact_id: int, db: Session = Depends(get_db)):
     if c:
         db.delete(c)
         db.flush()
+    return RedirectResponse("/ui/contacts", status_code=303)
+
+
+@router.post("/ui/contacts/{contact_id}/team")
+def contact_change_team(
+    contact_id: int, team_key: str = Form(""), db: Session = Depends(get_db)
+):
+    """담당자가 속한 팀(접수를 받을 팀)을 변경. 빈 값이면 '전체'."""
+    c = db.get(Contact, contact_id)
+    if not c:
+        raise HTTPException(404, "contact not found")
+    key = team_key.strip()
+    if key and not db.query(Team).filter_by(key=key).first():
+        raise HTTPException(400, "invalid team")
+    c.team_key = key
+    db.flush()
     return RedirectResponse("/ui/contacts", status_code=303)
 
 

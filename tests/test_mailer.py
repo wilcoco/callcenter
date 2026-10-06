@@ -137,3 +137,31 @@ def test_ticket_assign_learns_team_contacts():
         cc = db.query(Contact).filter_by(team_key="prodtech", email="afero@icams.co.kr").first()
         assert cc is not None
         assert cc.name == "오명진"
+
+
+def test_contact_change_team_via_web():
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.database import session_scope
+    from app.models import Contact
+
+    client = TestClient(app)
+    with session_scope() as db:
+        db.add(Contact(name="팀변경테스트", email="chg@icams.co.kr", team_key="sales", active=True))
+    with session_scope() as db:
+        cid = db.query(Contact).filter_by(name="팀변경테스트").first().id
+
+    r = client.post(f"/ui/contacts/{cid}/team", data={"team_key": "exec_quality"}, follow_redirects=False)
+    assert r.status_code == 303
+    with session_scope() as db:
+        assert db.get(Contact, cid).team_key == "exec_quality"
+
+    # 빈 값이면 '전체'
+    r = client.post(f"/ui/contacts/{cid}/team", data={"team_key": ""}, follow_redirects=False)
+    assert r.status_code == 303
+    with session_scope() as db:
+        assert db.get(Contact, cid).team_key == ""
+
+    # 잘못된 팀은 거부
+    r = client.post(f"/ui/contacts/{cid}/team", data={"team_key": "no-such"})
+    assert r.status_code == 400
