@@ -21,6 +21,11 @@ def _make_engine():
     # postgresql:// 만 인식하므로 정규화
     if url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql://", 1)
+    # DB 드라이버를 설치된 psycopg2로 고정 (SQLAlchemy 기본/psycopg v3 의존 제거)
+    if url.startswith("postgresql+psycopg://"):
+        url = url.replace("postgresql+psycopg://", "postgresql+psycopg2://", 1)
+    elif url.startswith("postgresql://"):
+        url = url.replace("postgresql://", "postgresql+psycopg2://", 1)
     # SQLite 파일 디렉터리 생성
     if url.startswith("sqlite:///") and "./" in url:
         path = url.replace("sqlite:///", "", 1)
