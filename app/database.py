@@ -46,6 +46,7 @@ def init_db() -> None:
         models.seed_default_glossary(db)
         models.seed_directory(db)
         models.seed_team_contacts(db)
+        models.seed_exec_contacts(db)
         # 현재 환경변수 번호를 기본 회선으로 시드 (회선이 하나도 없을 때만)
         from .callbot import DEFAULT_GREETING
         from .config import get_settings

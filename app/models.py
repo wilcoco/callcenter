@@ -326,6 +326,38 @@ def seed_team_contacts(db: Session) -> None:
     db.flush()
 
 
+def seed_exec_contacts(db: Session) -> None:
+    """임원 담당자를 시드 (exec_/ceo_ 담당자가 아직 하나도 없을 때만).
+
+    한 번 시드된 뒤 관리자가 웹에서 바꾸면 재배포해도 되살아나지 않는다.
+    """
+    has_exec = (
+        db.query(Contact)
+        .filter((Contact.team_key.like("exec_%")) | (Contact.team_key.like("ceo_%")))
+        .first()
+    )
+    if has_exec:
+        return
+    import csv
+    import os
+
+    path = os.path.join(os.path.dirname(__file__), "exec_members_seed.csv")
+    if not os.path.exists(path):
+        return
+    with open(path, encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            team_key = (row.get("team_key") or "").strip()
+            name = (row.get("name") or "").strip()
+            login = (row.get("login_id") or "").strip()
+            if not team_key or not name or not login:
+                continue
+            db.add(Contact(
+                name=name, email=f"{login}@{EMAIL_DOMAIN}",
+                team_key=team_key, active=True,
+            ))
+    db.flush()
+
+
 class RoutingExample(Base):
     """관리자가 팀 배정을 수정한 학습 사례.
 
