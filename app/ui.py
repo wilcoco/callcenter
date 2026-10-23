@@ -10,6 +10,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .database import get_db
+from . import llm
 from .models import (
     Call, Contact, DirectoryPerson, GlossaryTerm, KnowledgeDoc,
     LineProfile, RoutingExample, Team, Ticket, to_kst,
@@ -128,6 +129,7 @@ def _page(title: str, body: str, active: str) -> str:
 <nav><span class="brand">{_brand_html()}</span>
 <a href="/"{nav_cls('dash')}>대시보드</a>
 <a href="/ui/tickets"{nav_cls('tickets')}>티켓</a>
+<a href="/ui/insights"{nav_cls('insights')}>분석</a>
 <a href="/ui/calls"{nav_cls('calls')}>통화 기록</a>
 <a href="/ui/knowledge"{nav_cls('knowledge')}>지식 문서</a>
 <a href="/ui/glossary"{nav_cls('glossary')}>용어 사전</a>
@@ -198,6 +200,81 @@ def dashboard(db: Session = Depends(get_db)):
 <table><tr><th>번호</th><th>담당팀</th><th>우선순위</th><th>제목</th><th>상태</th><th>접수</th></tr>
 {recent_rows}</table>"""
     return _page("대시보드", body, "dash")
+
+
+# ---------------------------------------------------------------------------
+# 분석 — 문의 유형 집계 + AI 카테고리 제안
+# ---------------------------------------------------------------------------
+def _bar(label: str, count: int, total: int) -> str:
+    pct = round(count / total * 100) if total else 0
+    width = max(2, pct)
+    return (
+        f'<tr><td style="white-space:nowrap">{_e(label)}</td>'
+        f'<td style="width:60%"><div style="background:#3b82f6;height:14px;border-radius:4px;'
+        f'width:{width}%"></div></td>'
+        f'<td style="text-align:right;white-space:nowrap">{count}건 · {pct}%</td></tr>'
+    )
+
+
+@router.get("/ui/insights", response_class=HTMLResponse)
+def insights_page(suggest: int = 0, db: Session = Depends(get_db)):
+    total = db.query(func.count(Ticket.id)).scalar() or 0
+
+    team_rows = (
+        db.query(Ticket.team_name, func.count(Ticket.id))
+        .group_by(Ticket.team_name)
+        .order_by(func.count(Ticket.id).desc())
+        .all()
+    )
+    team_html = "".join(_bar(n or "-", c, total) for n, c in team_rows) or \
+        '<tr><td colspan="3" class="empty">데이터 없음</td></tr>'
+
+    intent_rows = (
+        db.query(Call.intent, func.count(Call.id))
+        .filter(Call.intent.isnot(None), Call.intent != "")
+        .group_by(Call.intent)
+        .order_by(func.count(Call.id).desc())
+        .limit(15)
+        .all()
+    )
+    intent_total = sum(c for _, c in intent_rows) or total
+    intent_html = "".join(_bar(n or "-", c, intent_total) for n, c in intent_rows) or \
+        '<tr><td colspan="3" class="empty">데이터 없음</td></tr>'
+
+    # AI 카테고리 제안 (버튼 눌렀을 때만)
+    ai_html = ""
+    if suggest:
+        samples = [
+            f"{t.title} / {t.summary}"
+            for t in db.query(Ticket).order_by(Ticket.id.desc()).limit(300).all()
+        ]
+        cats = llm.suggest_categories(samples)
+        if cats:
+            items = "".join(
+                f"<tr><td style='text-align:center'><b>{i+1}</b></td>"
+                f"<td><b>{_e(c['label'])}</b></td><td>{_e(c['description'])}</td>"
+                f"<td class='sub-text'>{_e(c['example'])}</td></tr>"
+                for i, c in enumerate(cats)
+            )
+            ai_html = f"""
+<h1 style="margin-top:1.6rem">AI가 제안한 문의 유형 (앞단 메뉴 후보)</h1>
+<p class="hint">실제 통화들을 AI가 묶어 자주 나오는 유형을 번호순으로 정리했습니다.
+이것을 '1번 OO, 2번 XX' 식 안내 메뉴나 분류 기준으로 쓸 수 있습니다.</p>
+<table><tr><th>번호</th><th>유형</th><th>설명</th><th>예시</th></tr>{items}</table>"""
+        else:
+            ai_html = ('<p class="hint" style="margin-top:1.6rem">AI 카테고리 제안을 만들지 '
+                       '못했습니다 (데이터가 적거나 ANTHROPIC_API_KEY 미설정).</p>')
+
+    body = f"""
+<p class="hint">지금까지 접수된 {total}건을 유형별로 집계했습니다.
+아래 분포가 곧 "몇 가지로 나뉘는지"를 보여주며, 앞단 메뉴 설계의 근거가 됩니다.</p>
+<h1>팀(소관)별 분포</h1>
+<table>{team_html}</table>
+<h1 style="margin-top:1.6rem">용건(intent)별 분포 — 상위 15</h1>
+<table>{intent_html}</table>
+<p style="margin-top:1.4rem"><a class="btn" href="/ui/insights?suggest=1">🤖 AI로 문의 유형 자동 분류</a></p>
+{ai_html}"""
+    return _page("분석", body, "insights")
 
 
 # ---------------------------------------------------------------------------

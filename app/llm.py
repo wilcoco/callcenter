@@ -286,6 +286,49 @@ def _norm_priority(value) -> str:
     return value if value in {"low", "normal", "high", "urgent"} else "normal"
 
 
+def suggest_categories(samples: list[str], n: int = 7) -> list[dict]:
+    """과거 통화 제목/요약 목록 -> 자주 들어오는 문의 유형 n개 제안.
+
+    반환: [{"label": 짧은 이름, "description": 설명, "example": 예시}] (관련도/빈도 순)
+    LLM 미설정이거나 표본이 없으면 빈 리스트.
+    """
+    settings = get_settings()
+    texts = [s.strip() for s in samples if s and s.strip()]
+    if not settings.llm_enabled or not texts:
+        return []
+    joined = "\n".join(f"- {t}" for t in texts[:400])[:12000]
+    system = (
+        "당신은 콜센터 데이터 분석가입니다. 아래는 지금까지 들어온 전화 문의들의 제목/요약 목록입니다.\n"
+        f"이를 보고 가장 자주 반복되는 문의 유형을 최대 {n}개로 묶어, 많은 순서로 정리하세요.\n"
+        "각 유형은 전화 안내 메뉴로 쓸 수 있을 만큼 짧고 명확한 이름으로 지으세요.\n"
+        '반드시 JSON 배열만 출력: [{"label":"<짧은 유형명>","description":"<한 줄 설명>","example":"<대표 예시 한 줄>"}]'
+    )
+    try:
+        resp = _client().messages.create(
+            model=settings.analysis_model,
+            max_tokens=1200,
+            system=system,
+            messages=[{"role": "user", "content": joined}],
+        )
+        text = resp.content[0].text.strip()
+        start, end = text.find("["), text.rfind("]")
+        if start == -1 or end == -1:
+            return []
+        items = json.loads(text[start : end + 1])
+        out = []
+        for it in items[:n]:
+            if isinstance(it, dict) and it.get("label"):
+                out.append({
+                    "label": str(it.get("label", "")).strip()[:40],
+                    "description": str(it.get("description", "")).strip()[:120],
+                    "example": str(it.get("example", "")).strip()[:120],
+                })
+        return out
+    except Exception as exc:  # pragma: no cover
+        log.warning("카테고리 제안 실패: %s", exc)
+        return []
+
+
 _PHONE_RE = re.compile(r"0\d{1,2}[ .-]?\d{3,4}[ .-]?\d{4}")
 
 
