@@ -173,6 +173,8 @@ def _analyze_system(transcript: str = "") -> str:
 - 일상적인 업무·문의는 반드시 실무 팀에 배정하세요.
 - [임원]/[대표] (key가 exec_ 또는 ceo_로 시작)는 경영 판단이 필요한 중대 사안,
   법적 분쟁, 대형 사고·리콜, 임원/대표 면담 요청일 때만 배정하세요.
+- 외부 고객·거래처가 제기하는 제품 품질 불량·클레임은 양산품질팀(quality)으로 배정하고,
+  회사 최우선 사안이므로 priority를 high 이상(심각하면 urgent)으로 설정하세요.
 - 어느 쪽인지 모호하면 실무 팀 또는 general을 선택하세요.
 {_routing_examples_block(transcript)}
 

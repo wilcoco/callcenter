@@ -300,9 +300,11 @@ def routing_page(db: Session = Depends(get_db)):
             by_team.setdefault(c.team_key, []).append(c)
 
     # 표시 순서: 일반(1번) → 실무 팀 → 임원
-    order = ["general"]
+    # 1번 일반 문의, 2번 품질(고객 클레임·불량 — 최우선), 이후 나머지 → 임원
+    order = ["general", "quality"]
     order += [t["key"] for t in DEFAULT_TEAMS
-              if t["key"] != "general" and not t["key"].startswith(("exec_", "ceo_"))]
+              if t["key"] not in ("general", "quality")
+              and not t["key"].startswith(("exec_", "ceo_"))]
     order += [t["key"] for t in DEFAULT_TEAMS if t["key"].startswith(("exec_", "ceo_"))]
 
     def who(c) -> str:
