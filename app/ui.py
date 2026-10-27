@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from .database import get_db
 from . import llm
 from .models import (
-    Call, Contact, DirectoryPerson, GlossaryTerm, KnowledgeDoc,
+    Call, Contact, DEFAULT_TEAMS, DirectoryPerson, GlossaryTerm, KnowledgeDoc,
     LineProfile, RoutingExample, Team, Ticket, to_kst,
 )
 
@@ -130,6 +130,7 @@ def _page(title: str, body: str, active: str) -> str:
 <a href="/"{nav_cls('dash')}>대시보드</a>
 <a href="/ui/tickets"{nav_cls('tickets')}>티켓</a>
 <a href="/ui/insights"{nav_cls('insights')}>분석</a>
+<a href="/ui/routing"{nav_cls('routing')}>접수 경로</a>
 <a href="/ui/calls"{nav_cls('calls')}>통화 기록</a>
 <a href="/ui/knowledge"{nav_cls('knowledge')}>지식 문서</a>
 <a href="/ui/glossary"{nav_cls('glossary')}>용어 사전</a>
@@ -275,6 +276,69 @@ def insights_page(suggest: int = 0, db: Session = Depends(get_db)):
 <p style="margin-top:1.4rem"><a class="btn" href="/ui/insights?suggest=1">🤖 AI로 문의 유형 자동 분류</a></p>
 {ai_html}"""
     return _page("분석", body, "insights")
+
+
+# ---------------------------------------------------------------------------
+# 접수 경로 — 문의 유형(팀)별로 메일이 누구에게 가는지
+# ---------------------------------------------------------------------------
+@router.get("/ui/routing", response_class=HTMLResponse)
+def routing_page(db: Session = Depends(get_db)):
+    from .config import get_settings
+    from . import services
+
+    settings = get_settings()
+    always = settings.always_email.strip()
+    dir_name = {p.email: p.name for p in db.query(DirectoryPerson).all()}
+    teams = {t.key: t for t in db.query(Team).all()}
+    contacts = db.query(Contact).filter(Contact.active == True).all()  # noqa: E712
+    by_team: dict[str, list] = {}
+    global_contacts = []
+    for c in contacts:
+        if c.team_key == "":
+            global_contacts.append(c)
+        else:
+            by_team.setdefault(c.team_key, []).append(c)
+
+    # 표시 순서: 일반(1번) → 실무 팀 → 임원
+    order = ["general"]
+    order += [t["key"] for t in DEFAULT_TEAMS
+              if t["key"] != "general" and not t["key"].startswith(("exec_", "ceo_"))]
+    order += [t["key"] for t in DEFAULT_TEAMS if t["key"].startswith(("exec_", "ceo_"))]
+
+    def who(c) -> str:
+        nm = c.name or dir_name.get(c.email, "")
+        return f"{_e(nm)} &lt;{_e(c.email)}&gt;" if nm else _e(c.email)
+
+    rows = ""
+    for i, key in enumerate(order, 1):
+        team = teams.get(key)
+        if team is None:
+            continue
+        name = "회사 일반 문의" if key == "general" else team.name
+        parts = []
+        for c in by_team.get(key, []):
+            parts.append(who(c))
+        gl = [who(c) for c in global_contacts]
+        people = parts + ([f"(전체담당) {g}" for g in gl])
+        people_html = "<br>".join(people) if people else "<span class='sub-text'>지정된 담당자 없음</span>"
+        note = " ⚠️ 담당자 미지정" if not parts and key != "general" else ""
+        rows += (
+            f'<tr><td style="text-align:center"><b>{i}</b></td>'
+            f"<td><b>{_e(name)}</b>{note}</td>"
+            f"<td>{people_html}</td></tr>"
+        )
+
+    always_line = (
+        f"<b>{_e(dir_name.get(always, '') or always)}</b> &lt;{_e(always)}&gt;"
+        if always else "(미설정)"
+    )
+    body = f"""
+<p class="hint">전화가 접수되면 해당 유형(팀)으로 분류되고, 아래 사람들에게 이메일이 발송됩니다.
+<br>※ 아래 모든 건은 <b>항상 함께</b> {always_line} 로도 발송됩니다.
+<br>※ 담당자는 '담당자' 메뉴에서, 분류 기준은 '분석' 메뉴에서 관리합니다.</p>
+<table><tr><th>번호</th><th>문의 유형</th><th>메일 받는 담당자 (+ 항상 {_e(always)})</th></tr>
+{rows}</table>"""
+    return _page("접수 경로", body, "routing")
 
 
 # ---------------------------------------------------------------------------
