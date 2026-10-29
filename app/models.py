@@ -195,6 +195,9 @@ class Call(Base):
     to_number: Mapped[str] = mapped_column(String(32), default="")
     status: Mapped[str] = mapped_column(String(32), default="in-progress")
     turns: Mapped[int] = mapped_column(Integer, default=0)
+    # 통화 중 고객이 메뉴(예: 품질 문의 1번)를 선택하면 그 팀으로 확정 배정.
+    # 비어 있으면 통화 종료 후 AI가 분류한다.
+    forced_team_key: Mapped[str] = mapped_column(String(32), default="")
 
     summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     intent: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)

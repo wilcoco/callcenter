@@ -28,6 +28,40 @@ def test_full_call_flow_creates_ticket():
     assert call.ticket.team_key == "quality"  # 불량/클레임 → 양산품질팀
 
 
+def test_quality_menu_forces_quality_team():
+    """고객이 품질 문의(1번)를 선택하면, 통화 내용과 무관하게 양산품질팀 확정 배정."""
+    cid = "CO_QUAL_1"
+    callbot.set_active_caller(cid, "01055556666")  # call_start 핸들러가 하는 일
+    callbot.record_call_start(cid, "01055556666", "0705")
+    # 진행 중 통화 1건 → mark 적용 가능
+    assert callbot.mark_quality_inquiry() is True
+    # 내용 자체는 품질 키워드가 전혀 없는 발화
+    callbot.record_transcript(cid, "user", "제품에 대해 문의드릴 게 있어서요")
+    callbot.clear_active_caller(cid)
+    callbot.record_call_end(cid)
+
+    call = _get_call(cid)
+    assert call.forced_team_key == "quality"
+    assert call.ticket.team_key == "quality"
+    assert call.ticket.priority in ("high", "urgent")  # 품질은 최우선
+
+
+def test_mark_quality_skipped_when_ambiguous():
+    """동시 통화 2건이면 어느 통화인지 특정 불가 → 표시하지 않음(오배정 방지)."""
+    callbot.set_active_caller("CO_QUAL_A", "0701")
+    callbot.set_active_caller("CO_QUAL_B", "0702")
+    assert callbot.mark_quality_inquiry() is False
+    callbot.clear_active_caller("CO_QUAL_A")
+    callbot.clear_active_caller("CO_QUAL_B")
+
+
+def test_voice_prompt_mentions_quality_menu():
+    prompt = callbot.build_voice_system_prompt()
+    assert "start_quality_inquiry" in prompt
+    assert "1번" in prompt
+    assert callbot.DEFAULT_GREETING.count("1번") == 1
+
+
 def test_call_end_is_idempotent():
     cid = "CO_TEST_2"
     callbot.record_call_start(cid, "0701", "0702")

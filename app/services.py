@@ -107,6 +107,15 @@ def finalize_call(db: Session, call: Call) -> Ticket | None:
         return None
 
     analysis = llm.analyze_call(transcript)
+
+    # 통화 중 고객이 메뉴로 선택한 팀이 있으면 AI 분류보다 우선한다.
+    # (예: 품질 문의 1번 → 양산품질팀 확정, 최우선 사안이므로 우선순위도 상향)
+    forced = (call.forced_team_key or "").strip()
+    if forced:
+        analysis["team_key"] = forced
+        if forced == "quality" and analysis["priority"] in ("low", "normal"):
+            analysis["priority"] = "high"
+
     call.summary = analysis["summary"]
     call.intent = analysis["intent"]
 

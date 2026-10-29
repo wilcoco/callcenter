@@ -72,6 +72,9 @@ def _ensure_columns() -> None:
             "caller_name": "VARCHAR(128) DEFAULT ''",
             "callback": "VARCHAR(64) DEFAULT ''",
         },
+        "calls": {
+            "forced_team_key": "VARCHAR(32) DEFAULT ''",
+        },
     }
     inspector = inspect(engine)
     with engine.begin() as conn:

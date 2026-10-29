@@ -68,7 +68,8 @@ def _glossary_block() -> str:
 
 
 DEFAULT_GREETING = (
-    "안녕하세요, 주식회사 캠스입니다. 문의하실 내용을 말씀해 주시면 확인 후 회신드리겠습니다."
+    "안녕하세요, 주식회사 캠스입니다. 제품 품질 문의는 1번을 눌러 주시고, "
+    "그 밖의 문의는 내용을 말씀해 주세요."
 )
 
 
@@ -94,7 +95,14 @@ def build_voice_system_prompt(greeting: str | None = None, context: str | None =
 {_company_context_block(context)}
 역할:
 - 회사 대표 안내전화 AI입니다. 전화 건 분은 회사 구성원일 수도, 고객·협력사 등 외부인일 수도 있습니다.
-- 통화 내용에 따라 두 가지로 대응합니다.
+- 먼저 아래 [메뉴 안내]로 품질 문의인지 가려내고, 그 외에는 두 가지([대응 1]·[대응 2])로 대응합니다.
+
+[메뉴 안내 — 제품 품질 문의 1번 (최우선)]
+- 전화 건 분이 숫자 1번을 누르거나, "일번"·"1번"이라고 말하거나, 제품 품질·불량·하자·클레임·반품 문의임을
+  밝히면, 지체 없이 start_quality_inquiry 도구를 호출하세요. (도구는 한 통화에 한 번만 호출)
+- 이 통화는 양산품질팀으로 확정 접수됩니다. 어느 팀인지 더 고민하지 말고, 아래 [대응 2]의 접수 절차대로
+  "어떤 제품의 어떤 불량·문제인지, 발생 상황(수량·납품처·언제), 누구신지, 회신 연락처"를 받아 정리하세요.
+- 품질 문의가 아니면 도구를 호출하지 말고 아래 [대응 1]/[대응 2]로 진행합니다.
 
 [대응 1 — 회사 일반 문의 (영업시간·위치·연락처·절차 등 지식 문서에 답이 있는 것)]
 - 회사 지식 문서를 근거로 그 자리에서 바로 답변합니다. (질의응답)
@@ -188,6 +196,31 @@ def get_active_caller_number() -> str:
     if len(numbers) == 1:
         return numbers[0]
     return ""
+
+
+def _single_active_call_id() -> str:
+    """진행 중인 통화가 정확히 1건이면 그 call_id를 반환 (동시 통화 안전)."""
+    ids = list(_active_callers.keys())
+    return ids[0] if len(ids) == 1 else ""
+
+
+def mark_quality_inquiry() -> bool:
+    """현재 통화를 '품질 문의'로 표시해 양산품질팀 확정 배정되게 한다.
+
+    통화 중 고객이 1번(품질 문의)을 선택하면 음성봇 도구가 호출한다.
+    진행 중 통화가 1건일 때만 적용한다. 성공하면 True.
+    """
+    call_id = _single_active_call_id()
+    if not call_id:
+        log.info("품질 문의 표시 생략 — 활성 통화를 특정할 수 없음")
+        return False
+    with session_scope() as db:
+        call = db.query(Call).filter_by(call_sid=call_id).one_or_none()
+        if call is None:
+            return False
+        call.forced_team_key = "quality"
+    log.info("통화 %s → 품질 문의(1번)로 확정 표시", call_id)
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -346,6 +379,16 @@ def _attach_handlers(agent) -> None:
         회신 번호를 확인할 때 사용하세요. 번호 표시제한이면 unknown을 반환합니다."""
         number = get_active_caller_number()
         return number if number and number.lower() not in {"anonymous", "unknown", ""} else "unknown"
+
+    @agent.tool
+    async def start_quality_inquiry() -> str:
+        """고객이 '제품 품질 문의'를 선택했을 때(1번을 누르거나 품질·불량·하자·클레임·반품을
+        언급) 호출합니다. 이 통화는 양산품질팀으로 확정 접수됩니다. 한 통화에 한 번만 호출하세요."""
+        mark_quality_inquiry()
+        return (
+            "품질 문의로 접수되었습니다(양산품질팀 확정). 이제 어떤 제품의 어떤 불량·문제인지, "
+            "발생 상황(수량·납품처·시점), 어디의 누구신지, 회신 연락처를 받아 정리한 뒤 접수를 마무리하세요."
+        )
 
 
 def _make_agent(number: str, greeting: str | None, context: str | None):
